@@ -19,6 +19,13 @@ if [ "${NOTIFY_FORCE:-0}" != "1" ]; then
 fi
 
 TOOL="$(printf '%s' "$INPUT" | jq -r '.tool_name // "ferramenta"' 2>/dev/null)"
+
+# Interaction tools address the user directly — an approval dialog on top of
+# them is nonsense (denying your own question). Let the normal UI handle them.
+case "$TOOL" in
+  AskUserQuestion|EnterPlanMode|ExitPlanMode|TodoWrite)
+    exit 0 ;;
+esac
 DETAIL="$(printf '%s' "$INPUT" \
   | jq -r '.tool_input.command // .tool_input.file_path // (.tool_input | tostring) // ""' 2>/dev/null \
   | head -c 220 | tr '\n' ' ' | tr '"' "'" | tr '\\' '/')"

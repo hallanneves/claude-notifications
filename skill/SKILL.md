@@ -91,19 +91,25 @@ Configurados em `~/.claude/settings.json`:
 
 ## Gotchas
 
-- O ícone do Claude vem de um swap do ícone do `terminal-notifier.app`
-  (`set-claude-icon.sh` no repo). **`brew upgrade terminal-notifier` reverte** — re-rodar o
-  script. Clicar na notificação foca o VSCode (`NOTIFY_ACTIVATE` muda o bundle id).
+- Quem posta é o app `~/Applications/Claude Code Notifier.app` (criado pelo
+  `install-notifier-app.sh` do repo): é ele que carrega a permissão de notificação e o ícone
+  do Claude. Clicar na notificação foca o VSCode (`NOTIFY_ACTIVATE` muda o bundle id).
+- **Notificação que "sai" mas não aparece**: rodando o terminal-notifier do keg do Homebrew, o
+  macOS nunca pede permissão, aceita a notificação (ela aparece no `-list ALL`) e descarta o
+  banner em silêncio — tudo com `exit 0`, sem erro nenhum. É o app dedicado que resolve.
+  As flags `-sender` (pendura o processo, nunca entrega) e `-appIcon` (ignorada) não servem.
 - Config opcional em `~/.claude/skills/notify/notify.conf` (ver `notify.conf.example`):
-  `NOTIFY_ACTIVATE` (app do clique) e `NOTIFY_FRONT_APPS` (apps extras que suprimem
-  banner de "pronto" e dialog). `repeat.sh` exige intervalo inteiro >= 5s e o `stop` só
-  mata processos com o marker `claude-notify-repeat` (PID reciclado nunca é alvo).
+  `NOTIFY_ACTIVATE` (app do clique), `NOTIFY_FRONT_APPS` (apps extras que suprimem banner de
+  "pronto" e dialog) e `NOTIFY_TN` (binário que posta). `repeat.sh` exige intervalo inteiro
+  >= 5s e o `stop` só mata processos com o marker `claude-notify-repeat` (PID reciclado nunca
+  é alvo).
 - Sem terminal-notifier, o fallback é `osascript`: banner sai como "Script Editor" e o
   clique/"Mostrar" abre uma janela vazia do Script Editor (quirk do macOS).
 - O dialog de aprovação usa `activate` antes do `display dialog` — sem isso a janela nasce
   atrás do app em foco e ninguém vê.
-- Se nada aparecer: Ajustes do Sistema → Notificações → permitir o app (terminal-notifier ou
-  Script Editor). Modo Foco/Não Perturbe silencia.
+- Se nada aparecer: Ajustes do Sistema → Notificações → permitir o app ("Claude Code", ou
+  "Script Editor" no fallback) e estilo em Banners/Alertas, nunca "Nenhum". Foco/Não Perturbe
+  silencia.
 - Aspas na mensagem são seguras — os scripts escapam antes do AppleScript.
 - Fonte canônica/instalação: repo `hallanneves/claude-notifications` (GitHub). Ao mudar algo
   aqui, refletir lá.

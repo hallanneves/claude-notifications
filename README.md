@@ -50,33 +50,51 @@ O instalador:
 2. Adiciona os hooks `Notification`, `Stop` e `PermissionRequest` ao `~/.claude/settings.json`
    — **sem sobrescrever**: se você já tem hooks nesses eventos, ele pede merge manual com o
    [`hooks.json`](hooks.json).
-3. Se o terminal-notifier estiver instalado, aplica o **ícone do Claude** nas notificações
-   (roda o `set-claude-icon.sh`).
+3. Se o terminal-notifier estiver instalado, cria o app **"Claude Code"** em `~/Applications`
+   com o ícone do Claude (roda o `install-notifier-app.sh`) e o abre uma vez, para o macOS
+   pedir a permissão de notificação.
 
 Depois:
 
 1. **Reinicie o Claude Code** (ou abra `/hooks`) para carregar os hooks.
-2. Dispare um teste: `~/.claude/skills/notify/notify.sh --done "Instalação concluída"`.
-3. Na primeira notificação o macOS pede permissão (para "terminal-notifier" ou "Script
-   Editor") — clique em Permitir. Se o banner não aparecer depois disso: **Ajustes do
-   Sistema → Notificações → permitir o app**.
+2. Clique em **Permitir** no prompt "Notificações de *Claude Code*".
+3. Dispare um teste: `~/.claude/skills/notify/notify.sh --done "Instalação concluída"`.
+   Se o banner não aparecer: **Ajustes do Sistema → Notificações → Claude Code**, ligue
+   "Permitir notificações" e deixe o estilo em **Banners** ou **Alertas**.
 
 > Sem o terminal-notifier o fallback é `osascript`: funciona, mas o banner sai em nome do
 > Script Editor e clicar nele abre uma janela vazia do Script Editor (quirk do macOS para
 > notificações de CLI).
 
-### Ícone do Claude
+### O app "Claude Code" — por que ele existe
 
-O macOS mostra o ícone do **app que posta** a notificação e não permite customizá-lo por
-notificação. O `set-claude-icon.sh` resolve trocando o ícone do próprio
-`terminal-notifier.app` (gera o `.icns` a partir de `assets/claude-logo.png`, re-assina o
-bundle ad-hoc e recarrega o Notification Center).
+Duas razões, e a primeira é o que decide se você recebe notificação **alguma**:
 
-**`brew upgrade terminal-notifier` restaura o ícone original** — é só rodar o script de novo:
+**1. Permissão.** Rodando direto do keg do Homebrew, o macOS (confirmado no 26.x) nunca
+registra o terminal-notifier como app apto a notificar: nunca mostra o prompt de permissão,
+aceita todas as notificações — elas aparecem no `terminal-notifier -list ALL` — e **descarta
+o banner em silêncio**. Todo comando sai com `exit 0`, nenhum erro em lugar nenhum, e nada na
+tela. Um bundle com identidade própria em `~/Applications`, **lançado uma vez**, recebe o
+prompt normalmente.
+
+**2. Ícone.** O macOS mostra o ícone do *app que posta* a notificação e não deixa customizá-lo
+por notificação (`-appIcon` é aceito e ignorado; `-sender` **pendura o processo** e nunca
+entrega — não use nenhum dos dois). Trocar o ícone do `terminal-notifier.app` compartilhado
+funciona, mas marca com o logo do Claude **toda** notificação de qualquer outro programa que
+use o terminal-notifier — e `brew upgrade` desfaz. Com o app dedicado, o logo fica só nele.
+
+De brinde, ele ganha uma entrada própria em Ajustes → Notificações ("Claude Code"), com som,
+estilo e Foco independentes.
 
 ```bash
-./set-claude-icon.sh
+./install-notifier-app.sh            # cria (preserva o existente e sua autorização)
+./install-notifier-app.sh --force    # recria do zero — o macOS vai pedir permissão de novo
+./set-claude-icon.sh                 # só re-aplica o ícone
 ```
+
+O `set-claude-icon.sh` aplica no app dedicado quando ele existe; sem ele, cai no
+`terminal-notifier.app` do Homebrew — e aí sim um `brew upgrade` restaura o ícone original e
+o script precisa ser re-rodado.
 
 ## Uso no Claude Code
 
@@ -101,8 +119,10 @@ Direto no shell (fora do Claude):
 
 ```
 claude-notifications/
-├── install.sh              # instala skill + hooks (+ ícone, se possível); faz backup do settings.json
-├── set-claude-icon.sh      # aplica o ícone do Claude no terminal-notifier.app
+├── install.sh              # instala skill + hooks (+ app, se possível); faz backup do settings.json
+├── install-notifier-app.sh # cria o app "Claude Code" em ~/Applications (permissão + ícone isolado)
+├── set-claude-icon.sh      # aplica o ícone do Claude no app dedicado (ou no terminal-notifier)
+├── bundle-lib.sh           # resolução de bundle compartilhada pelos dois scripts acima
 ├── hooks.json              # snippet dos hooks p/ merge manual no settings.json
 ├── assets/claude-logo.png
 └── skill/
@@ -144,6 +164,10 @@ NOTIFY_ACTIVATE="com.todesktop.230313mzl4w4u92"
 
 # Apps extras que suprimem o banner de "pronto" e o dialog quando em foco
 NOTIFY_FRONT_APPS="MeuEditor,OutroTerminal"
+
+# Binário usado para notificar. Por padrão o app dedicado quando existe, senão o
+# terminal-notifier do PATH. Só mexa se quiser apontar para outro bundle.
+NOTIFY_TN="$HOME/Applications/Claude Code Notifier.app/Contents/MacOS/terminal-notifier"
 ```
 
 Outros ajustes:
@@ -157,7 +181,8 @@ Outros ajustes:
 
 ```bash
 rm -rf ~/.claude/skills/notify
-brew reinstall terminal-notifier   # restaura o ícone original
+rm -rf ~/Applications/"Claude Code Notifier.app"
+brew reinstall terminal-notifier   # só se você tinha usado o ícone no bundle compartilhado
 ```
 
 E remova as chaves `Notification`, `Stop` e `PermissionRequest` de `hooks` no

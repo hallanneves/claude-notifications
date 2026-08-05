@@ -10,3 +10,8 @@
 # quando em primeiro plano, suprimem o banner de "trabalho pronto" e o dialog de
 # aprovação — além da lista padrão de editores/terminais.
 #NOTIFY_FRONT_APPS="MeuEditor,OutroTerminal"
+
+# Binário que posta as notificações. Padrão: o app dedicado criado pelo
+# install-notifier-app.sh quando existe, senão o terminal-notifier do PATH.
+# Só defina para apontar para outro bundle.
+#NOTIFY_TN="$HOME/Applications/Claude Code Notifier.app/Contents/MacOS/terminal-notifier"

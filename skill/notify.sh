@@ -25,13 +25,25 @@ case "$TYPE" in
   info)     : "${TITLE:=Claude Code}";          : "${SOUND:=Glass}" ;;
 esac
 
-if command -v terminal-notifier >/dev/null 2>&1; then
+# Prefer a dedicated copy of the terminal-notifier bundle when one exists: with
+# its own bundle id it gets its own entry in System Settings > Notifications and
+# carries the Claude icon WITHOUT branding every other terminal-notifier caller
+# on this machine. Override with NOTIFY_TN (notify.conf or environment).
+TN="${NOTIFY_TN:-}"
+DEDICATED="$HOME/Applications/Claude Code Notifier.app/Contents/MacOS/terminal-notifier"
+if [ -z "$TN" ] && [ -x "$DEDICATED" ]; then
+  TN="$DEDICATED"
+elif [ -z "$TN" ]; then
+  TN="$(command -v terminal-notifier 2>/dev/null || true)"
+fi
+
+if [ -n "$TN" ]; then
   # Clicking the notification focuses the editor instead of macOS's blank
   # Script Editor fallback. Override the target app via NOTIFY_ACTIVATE
   # (notify.conf or environment).
   args=(-message "$MSG" -title "$TITLE" -sound "$SOUND" -activate "${NOTIFY_ACTIVATE:-com.microsoft.VSCode}")
   [ -n "$SUBTITLE" ] && args+=(-subtitle "$SUBTITLE")
-  terminal-notifier "${args[@]}"
+  "$TN" "${args[@]}"
 else
   esc() { printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'; }
   script="display notification \"$(esc "$MSG")\" with title \"$(esc "$TITLE")\""

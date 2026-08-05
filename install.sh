@@ -33,12 +33,14 @@ else
 fi
 
 if command -v terminal-notifier >/dev/null 2>&1; then
-  ./set-claude-icon.sh || echo "⚠️  não consegui aplicar o ícone do Claude (rode ./set-claude-icon.sh depois)"
+  ./install-notifier-app.sh || echo "⚠️  não consegui criar o app de notificação (rode ./install-notifier-app.sh depois)"
 else
-  echo "ℹ️  Recomendado: brew install terminal-notifier && ./set-claude-icon.sh (ícone do Claude + clique foca o VSCode)"
+  echo "ℹ️  Recomendado: brew install terminal-notifier && ./install-notifier-app.sh"
+  echo "   (sem ele o fallback é o osascript: o banner sai em nome do Script Editor)"
 fi
 
 echo
 echo "🔔 Teste agora:  $DEST/notify.sh --done \"Instalação concluída\""
 echo "➡️  Reinicie o Claude Code (ou abra /hooks) para os hooks carregarem."
-echo "➡️  Se o banner não aparecer: Ajustes do Sistema → Notificações → Script Editor → permitir."
+echo "➡️  Se o banner não aparecer: Ajustes do Sistema → Notificações → permitir o app"
+echo "   (\"Claude Code\", ou \"Script Editor\" quando estiver no fallback)."

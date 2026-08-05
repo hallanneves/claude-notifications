@@ -1,9 +1,12 @@
 #!/bin/bash
 # notify.sh — native macOS notification (banner + sound), Slack-style.
 # usage: notify.sh [--approval|--info|--done|--fail] MESSAGE [TITLE] [SUBTITLE] [SOUND]
-# The type presets an emoji title + a sound that matches the event's feeling;
-# explicit TITLE/SOUND arguments override the preset.
+# The type presets a title + a sound that matches the event's feeling; explicit
+# TITLE/SOUND arguments override the preset. No emojis in titles or messages.
 set -euo pipefail
+
+CONF="$HOME/.claude/skills/notify/notify.conf"
+[ -f "$CONF" ] && . "$CONF"
 
 TYPE="info"
 case "${1:-}" in
@@ -24,7 +27,8 @@ esac
 
 if command -v terminal-notifier >/dev/null 2>&1; then
   # Clicking the notification focuses the editor instead of macOS's blank
-  # Script Editor fallback. Override the target app via NOTIFY_ACTIVATE.
+  # Script Editor fallback. Override the target app via NOTIFY_ACTIVATE
+  # (notify.conf or environment).
   args=(-message "$MSG" -title "$TITLE" -sound "$SOUND" -activate "${NOTIFY_ACTIVATE:-com.microsoft.VSCode}")
   [ -n "$SUBTITLE" ] && args+=(-subtitle "$SUBTITLE")
   terminal-notifier "${args[@]}"

@@ -94,6 +94,10 @@ Configurados em `~/.claude/settings.json`:
 - O ícone do Claude vem de um swap do ícone do `terminal-notifier.app`
   (`set-claude-icon.sh` no repo). **`brew upgrade terminal-notifier` reverte** — re-rodar o
   script. Clicar na notificação foca o VSCode (`NOTIFY_ACTIVATE` muda o bundle id).
+- Config opcional em `~/.claude/skills/notify/notify.conf` (ver `notify.conf.example`):
+  `NOTIFY_ACTIVATE` (app do clique) e `NOTIFY_FRONT_APPS` (apps extras que suprimem
+  banner de "pronto" e dialog). `repeat.sh` exige intervalo inteiro >= 5s e o `stop` só
+  mata processos com o marker `claude-notify-repeat` (PID reciclado nunca é alvo).
 - Sem terminal-notifier, o fallback é `osascript`: banner sai como "Script Editor" e o
   clique/"Mostrar" abre uma janela vazia do Script Editor (quirk do macOS).
 - O dialog de aprovação usa `activate` antes do `display dialog` — sem isso a janela nasce

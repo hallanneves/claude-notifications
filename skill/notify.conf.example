@@ -1,0 +1,12 @@
+# Configuração opcional do claude-notifications.
+# Para ativar: copie este arquivo para ~/.claude/skills/notify/notify.conf e edite.
+# Sintaxe de shell (é carregado com `source` pelos scripts).
+
+# Bundle id do app focado ao clicar numa notificação (padrão: VSCode).
+# Descubra o do seu editor com: osascript -e 'id of app "NomeDoApp"'
+#NOTIFY_ACTIVATE="com.todesktop.230313mzl4w4u92"   # exemplo: Cursor
+
+# Apps extras (separados por vírgula, nome exato do processo via lsappinfo) que,
+# quando em primeiro plano, suprimem o banner de "trabalho pronto" e o dialog de
+# aprovação — além da lista padrão de editores/terminais.
+#NOTIFY_FRONT_APPS="MeuEditor,OutroTerminal"

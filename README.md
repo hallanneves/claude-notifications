@@ -19,11 +19,13 @@ Sem emojis nas mensagens: a identificação visual vem do **ícone do Claude** n
 
 Comportamentos inteligentes:
 
-- **Botão de aprovação**: quando o Claude Code vai pedir permissão e o VSCode/terminal **não**
-  está em primeiro plano, aparece um dialog nativo em primeiro plano com **Aprovar / Abrir no
-  editor / Negar**. A escolha volta pro Claude Code como decisão real (allow e deny testados).
-  Timeout (50s), erro ou "Abrir no editor" caem no prompt normal do terminal — fail-safe.
-  Ferramentas de interação (perguntas do próprio Claude) não geram dialog.
+- **Botão de aprovação**: quando o Claude Code vai pedir permissão e o seu editor/terminal
+  **não** está em primeiro plano (VSCode, Cursor, Zed, Windsurf, iTerm2, Warp, Ghostty…),
+  aparece um dialog nativo em primeiro plano com **Aprovar / Abrir no editor / Negar**. A
+  escolha volta pro Claude Code como decisão real (allow e deny testados). Timeout (50s),
+  erro ou "Abrir no editor" caem no prompt normal do terminal — fail-safe. Comandos longos
+  aparecem truncados **com aviso explícito** (nunca corte silencioso — use "Abrir no editor"
+  para ver tudo), e ferramentas de interação (perguntas do próprio Claude) não geram dialog.
 - **"Trabalho pronto" sem spam**: o banner de fim de turno é suprimido enquanto o
   editor/terminal está em primeiro plano (você já está vendo o resultado). Saiu pro Slack ou
   navegador? Ele dispara.
@@ -99,18 +101,27 @@ Direto no shell (fora do Claude):
 
 ```
 claude-notifications/
-├── install.sh            # instala skill + hooks (+ ícone, se possível)
-├── set-claude-icon.sh    # aplica o ícone do Claude no terminal-notifier.app
-├── hooks.json            # snippet dos hooks p/ merge manual no settings.json
+├── install.sh              # instala skill + hooks (+ ícone, se possível); faz backup do settings.json
+├── set-claude-icon.sh      # aplica o ícone do Claude no terminal-notifier.app
+├── hooks.json              # snippet dos hooks p/ merge manual no settings.json
 ├── assets/claude-logo.png
 └── skill/
-    ├── SKILL.md          # instruções que o Claude Code carrega (/notify)
-    ├── notify.sh         # banner nativo (terminal-notifier ou osascript)
-    ├── repeat.sh         # lembretes periódicos detached (start/list/stop)
-    ├── notify-hook.sh    # hook Notification → banner "precisa de você"
-    ├── stop-hook.sh      # hook Stop → banner "pronto" (suprimido c/ editor em foco)
-    └── approval-hook.sh  # hook PermissionRequest → dialog Aprovar/Negar
+    ├── SKILL.md            # instruções que o Claude Code carrega (/notify)
+    ├── notify.sh           # banner nativo (terminal-notifier ou osascript)
+    ├── repeat.sh           # lembretes periódicos detached (start/list/stop)
+    ├── notify.conf.example # config opcional (app do clique, apps que suprimem)
+    ├── notify-hook.sh      # hook Notification → banner "precisa de você"
+    ├── stop-hook.sh        # hook Stop → banner "pronto" (suprimido c/ editor em foco)
+    └── approval-hook.sh    # hook PermissionRequest → dialog Aprovar/Negar
 ```
+
+Notas de segurança do design:
+
+- `repeat.sh stop` só mata processos comprovadamente dele (verifica um marker no `ps` antes do
+  `kill` — PID reciclado pós-reboot nunca é alvo) e rejeita intervalos inválidos ou menores
+  que 5s (um `sleep` quebrado viraria um loop de spam de notificações).
+- O `install.sh` faz backup (`settings.json.bak`) antes de mexer nos seus hooks e nunca
+  sobrescreve hooks existentes.
 
 O gate de primeiro plano usa `lsappinfo` (sem permissões extras). O dialog de aprovação faz
 `activate` antes do `display dialog` — sem isso a janela nasce **atrás** do app em foco. A
@@ -124,11 +135,23 @@ normal.
 
 ## Personalização
 
-- **Sons**: qualquer nome de `ls /System/Library/Sounds` (Glass, Hero, Basso, Submarine, Ping…).
-- **App aberto no clique**: padrão é o VSCode; defina `NOTIFY_ACTIVATE=<bundle-id>`
-  (ex.: `com.googlecode.iterm2`).
+Crie `~/.claude/skills/notify/notify.conf` (há um `notify.conf.example` instalado junto):
+
+```bash
+# App focado ao clicar na notificação (padrão: VSCode).
+# Descubra o bundle id do seu editor: osascript -e 'id of app "Cursor"'
+NOTIFY_ACTIVATE="com.todesktop.230313mzl4w4u92"
+
+# Apps extras que suprimem o banner de "pronto" e o dialog quando em foco
+NOTIFY_FRONT_APPS="MeuEditor,OutroTerminal"
+```
+
+Outros ajustes:
+
+- **Sons**: qualquer nome de `ls /System/Library/Sounds` (Glass, Hero, Basso, Submarine, Ping…),
+  passado como 4º argumento do `notify.sh`.
 - **Ícone**: troque `assets/claude-logo.png` (quadrado, com alpha) e re-rode `set-claude-icon.sh`.
-- **Apps que suprimem o banner de "pronto"**: edite a lista `case "$FRONT"` em `stop-hook.sh`.
+- **Lembretes**: intervalo mínimo do `repeat.sh` é 5s (proteção contra loop de spam).
 
 ## Desinstalar
 
@@ -138,4 +161,9 @@ brew reinstall terminal-notifier   # restaura o ícone original
 ```
 
 E remova as chaves `Notification`, `Stop` e `PermissionRequest` de `hooks` no
-`~/.claude/settings.json`.
+`~/.claude/settings.json` (ou restaure o `settings.json.bak` criado na instalação).
+
+## Licença
+
+Código sob [MIT](LICENSE). O logo (`assets/claude-logo.png`) é marca da Anthropic, usado
+apenas para identificar notificações do Claude Code — não é coberto pela MIT.

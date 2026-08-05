@@ -7,18 +7,27 @@
 # NOTIFY_FORCE=1 bypasses the frontmost-app gate (used for testing).
 set -uo pipefail
 
+CONF="$HOME/.claude/skills/notify/notify.conf"
+[ -f "$CONF" ] && . "$CONF"
+
 INPUT="$(cat)"
 
 if [ "${NOTIFY_FORCE:-0}" != "1" ]; then
   FRONT="$(lsappinfo info -only name "$(lsappinfo front 2>/dev/null)" 2>/dev/null \
     | sed -E 's/.*"(LSDisplayName|name)"="([^"]+)".*/\2/')"
   case "$FRONT" in
-    Code|"Visual Studio Code"|"Code - Insiders"|Electron|Terminal|iTerm2|kitty|Ghostty|WezTerm|Alacritty)
+    Code|"Visual Studio Code"|"Code - Insiders"|Cursor|Windsurf|Zed|Electron|Terminal|iTerm2|kitty|Ghostty|WezTerm|Alacritty|Warp|Hyper|Tabby)
       exit 0 ;;
   esac
+  if [ -n "$FRONT" ] && [ -n "${NOTIFY_FRONT_APPS:-}" ]; then
+    case ",$NOTIFY_FRONT_APPS," in
+      *",$FRONT,"*) exit 0 ;;
+    esac
+  fi
 fi
 
-TOOL="$(printf '%s' "$INPUT" | jq -r '.tool_name // "ferramenta"' 2>/dev/null)"
+TOOL="$(printf '%s' "$INPUT" | jq -r '.tool_name // empty' 2>/dev/null)"
+[ -n "$TOOL" ] || TOOL="ferramenta"
 
 # Interaction tools address the user directly — an approval dialog on top of
 # them is nonsense (denying your own question). Let the normal UI handle them.
@@ -26,9 +35,13 @@ case "$TOOL" in
   AskUserQuestion|EnterPlanMode|ExitPlanMode|TodoWrite)
     exit 0 ;;
 esac
-DETAIL="$(printf '%s' "$INPUT" \
-  | jq -r '.tool_input.command // .tool_input.file_path // (.tool_input | tostring) // ""' 2>/dev/null \
-  | head -c 220 | tr '\n' ' ' | tr '"' "'" | tr '\\' '/')"
+
+RAW="$(printf '%s' "$INPUT" \
+  | jq -r '.tool_input.command // .tool_input.file_path // (.tool_input // {} | tostring)' 2>/dev/null || true)"
+case "$RAW" in null|'{}') RAW="" ;; esac
+DETAIL="$(printf '%s' "$RAW" | head -c 350 | tr '\n' ' ' | tr '"' "'" | tr '\\' '/')"
+# Never hide the tail of a long command silently from the approver.
+[ "${#RAW}" -gt 350 ] && DETAIL="$DETAIL [TRUNCADO — use Abrir no editor para ver o comando completo]"
 
 PROMPT="Claude quer usar: $TOOL"
 [ -n "$DETAIL" ] && PROMPT="$PROMPT — $DETAIL"
@@ -47,10 +60,10 @@ case "$RES" in
     printf '%s' "$INPUT" | jq -c '{hookSpecificOutput:{hookEventName:"PermissionRequest",decision:{behavior:"allow",updatedInput:(.tool_input // {})}}}'
     ;;
   *"button returned:Negar"*)
-    printf '{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"deny","message":"Negado pelo Hallan via dialog de notificação"}}}'
+    printf '{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"deny","message":"Negado por %s via dialog de notificação"}}}' "${USER:-usuário}"
     ;;
   *"button returned:Abrir no editor"*)
-    open -b com.microsoft.VSCode 2>/dev/null || true
+    open -b "${NOTIFY_ACTIVATE:-com.microsoft.VSCode}" 2>/dev/null || true
     exit 0 ;;
   *)
     exit 0 ;;

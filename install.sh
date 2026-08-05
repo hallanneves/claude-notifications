@@ -12,9 +12,10 @@ command -v jq >/dev/null 2>&1 || { echo "❌ jq não encontrado (vem no macOS 15
 
 DEST="$HOME/.claude/skills/notify"
 mkdir -p "$DEST"
-cp -f skill/SKILL.md skill/*.sh "$DEST/"
+cp -f skill/SKILL.md skill/notify.conf.example skill/*.sh "$DEST/"
 chmod +x "$DEST"/*.sh
 echo "✅ skill instalada em $DEST"
+echo "   (config opcional: copie $DEST/notify.conf.example para notify.conf e edite)"
 
 SETTINGS="$HOME/.claude/settings.json"
 [ -f "$SETTINGS" ] || echo '{}' > "$SETTINGS"
@@ -23,6 +24,7 @@ if jq -e '.hooks.Notification, .hooks.Stop, .hooks.PermissionRequest | select(. 
   echo "⚠️  $SETTINGS já tem hooks em Notification/Stop/PermissionRequest."
   echo "    Faça o merge manual usando o conteúdo de hooks.json (não vou sobrescrever)."
 else
+  cp "$SETTINGS" "${SETTINGS}.bak"
   tmp="$(mktemp)"
   jq -s '.[0].hooks = ((.[0].hooks // {}) + .[1].hooks) | .[0]' "$SETTINGS" hooks.json > "$tmp"
   jq -e . "$tmp" >/dev/null

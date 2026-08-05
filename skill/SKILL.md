@@ -66,9 +66,13 @@ Configurados em `~/.claude/settings.json`:
 
 ## Gotchas
 
-- Sem `terminal-notifier`, o banner sai em nome do "Script Editor" e o ícone real do app não é
-  customizável — a identidade visual vem do emoji no título. Se nada aparecer: Ajustes do
-  Sistema → Notificações → Script Editor → permitir. Modo Foco/Não Perturbe silencia.
+- Com `terminal-notifier` instalado (está, via brew desde 2026-08-05), **clicar na notificação
+  foca o VSCode** (`NOTIFY_ACTIVATE` muda o bundle id do app-alvo). Sem ele, o fallback é
+  `osascript`: banner sai como "Script Editor" e o clique/"Mostrar" abre uma janela vazia do
+  Script Editor (quirk do macOS — notificação de CLI não tem app dono). O ícone real do app não
+  é customizável em nenhum dos casos; a identidade visual vem do emoji no título. Se nada
+  aparecer: Ajustes do Sistema → Notificações → permitir o app (terminal-notifier ou Script
+  Editor). Modo Foco/Não Perturbe silencia.
 - Aspas e emoji na mensagem são seguros — os scripts escapam antes do AppleScript.
 - Fonte canônica/instalação: repo `hallanneves/claude-notifications` (GitHub). Ao mudar algo
   aqui, refletir lá.

@@ -23,7 +23,9 @@ case "$TYPE" in
 esac
 
 if command -v terminal-notifier >/dev/null 2>&1; then
-  args=(-message "$MSG" -title "$TITLE" -sound "$SOUND")
+  # Clicking the notification focuses the editor instead of macOS's blank
+  # Script Editor fallback. Override the target app via NOTIFY_ACTIVATE.
+  args=(-message "$MSG" -title "$TITLE" -sound "$SOUND" -activate "${NOTIFY_ACTIVATE:-com.microsoft.VSCode}")
   [ -n "$SUBTITLE" ] && args+=(-subtitle "$SUBTITLE")
   terminal-notifier "${args[@]}"
 else

@@ -44,10 +44,15 @@ O instalador:
 
 Depois:
 
-1. **Reinicie o Claude Code** (ou abra `/hooks`) para carregar os hooks.
-2. Dispare um teste: `~/.claude/skills/notify/notify.sh --done "Instalação concluída"`.
-3. Se o banner não aparecer: **Ajustes do Sistema → Notificações → Script Editor → Permitir**
-   (as notificações via `osascript` saem em nome do Script Editor).
+1. **Recomendado:** `brew install terminal-notifier` — sem ele o fallback é `osascript`, e aí
+   clicar na notificação (ou em "Mostrar") abre uma janela vazia do Script Editor, um quirk do
+   macOS para notificações de CLI. Com ele, **o clique foca o VSCode** (troque o app-alvo com a
+   env `NOTIFY_ACTIVATE=<bundle-id>`).
+2. **Reinicie o Claude Code** (ou abra `/hooks`) para carregar os hooks.
+3. Dispare um teste: `~/.claude/skills/notify/notify.sh --done "Instalação concluída"`.
+4. Na primeira notificação o macOS pede permissão (para "terminal-notifier" ou "Script
+   Editor") — clique em Permitir. Se o banner não aparecer depois disso: **Ajustes do
+   Sistema → Notificações → permitir o app**.
 
 ### Instalação manual
 
@@ -96,8 +101,8 @@ código 0 e sem output, o que faz o Claude Code mostrar o prompt interativo norm
 ## Personalização
 
 - **Sons**: qualquer nome de `ls /System/Library/Sounds` (Glass, Hero, Basso, Submarine, Ping…).
-- **Ícone de verdade** (em vez do Script Editor): `brew install terminal-notifier` — o
-  `notify.sh` detecta e passa a usá-lo automaticamente.
+- **App aberto no clique**: com terminal-notifier, o padrão é focar o VSCode; defina
+  `NOTIFY_ACTIVATE=<bundle-id>` (ex.: `com.googlecode.iterm2`) para outro app.
 - **Apps que suprimem o banner de "pronto"**: edite a lista `case "$FRONT"` em `stop-hook.sh`.
 
 ## Desinstalar

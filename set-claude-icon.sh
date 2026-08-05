@@ -1,19 +1,20 @@
 #!/bin/bash
-# Swap terminal-notifier's app icon for the Claude logo so notifications are
-# instantly identifiable. Re-run after `brew upgrade terminal-notifier` — the
-# upgrade restores the stock Terminal icon.
+# Swap the notifier app's icon for the Claude logo so notifications are
+# instantly identifiable.
+#
+# Target: the dedicated bundle from install-notifier-app.sh when it exists —
+# which keeps the Claude logo off every other terminal-notifier caller on the
+# machine and survives `brew upgrade`. Falls back to Homebrew's own
+# terminal-notifier.app, in which case a `brew upgrade terminal-notifier`
+# restores the stock icon and this script has to be re-run.
 set -euo pipefail
 cd "$(dirname "$0")"
+. ./bundle-lib.sh
 
-command -v terminal-notifier >/dev/null 2>&1 \
-  || { echo "❌ terminal-notifier não instalado (brew install terminal-notifier)"; exit 1; }
-
-BIN="$(readlink -f "$(command -v terminal-notifier)")"
-APP="${BIN%/Contents/MacOS/*}"
-case "$APP" in
-  *.app) [ -d "$APP" ] || { echo "❌ bundle não encontrado: $APP"; exit 1; } ;;
-  *) echo "❌ não consegui resolver o terminal-notifier.app a partir de $BIN"; exit 1 ;;
-esac
+APP="$(icon_target_bundle)" || {
+  echo "❌ terminal-notifier não instalado (brew install terminal-notifier)"
+  exit 1
+}
 
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
@@ -27,10 +28,16 @@ iconutil -c icns "$WORK/claude.iconset" -o "$WORK/icon.icns"
 ICNS_NAME="$(defaults read "$APP/Contents/Info" CFBundleIconFile 2>/dev/null || echo Terminal)"
 ICNS_NAME="${ICNS_NAME%.icns}.icns"
 cp "$WORK/icon.icns" "$APP/Contents/Resources/$ICNS_NAME"
+# Touching bundle contents invalidates the signature; without re-signing macOS
+# treats the app as tampered with.
 codesign --force --deep -s - "$APP"
 touch "$APP"
 /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$APP"
 killall NotificationCenter 2>/dev/null || true
 
 echo "✅ ícone do Claude aplicado em $APP"
-echo "   Re-rode este script depois de um 'brew upgrade terminal-notifier'."
+case "$APP" in
+  "$DEDICATED_APP") ;;
+  *) echo "   Este é o terminal-notifier compartilhado: re-rode após um 'brew upgrade'."
+     echo "   Para isolar o ícone só nas notificações do Claude: ./install-notifier-app.sh" ;;
+esac

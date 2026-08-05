@@ -55,6 +55,27 @@ bash ~/.claude/skills/notify/repeat.sh <intervalo_em_segundos> "<mensagem>"
 
 - Processo detached: continua depois que a sessão fechar. Informe o PID e como parar.
 - `/notify stop` → `repeat.sh stop` · `/notify list` → `repeat.sh list`
+- `repeat.sh` é SÓ para mensagem fixa (lembrete). Para status de trabalho, use o modo 4 —
+  nunca congele um "status" dentro de um repeat.
+
+### 4. Status do trabalho de tempos em tempos — "vai me mandando o status"
+
+Quando o usuário pedir progresso periódico de uma tarefa em andamento, quem compõe cada
+mensagem é VOCÊ, na hora, com o estado real — um `--info` curto por checagem:
+
+```bash
+bash ~/.claude/skills/notify/notify.sh "Migração: 3 de 7 arquivos prontos, testes passando" "Status do trabalho"
+```
+
+- **Você mesmo executando a tarefa**: dispare a cada marco concluído (fase, suíte, arquivo
+  grande), mirando o intervalo pedido de forma aproximada. Mudou de rumo ou travou em algo?
+  Isso É status — notifique.
+- **Trabalho em background** (suíte longa, workflow, agente, CI): programe checagens
+  periódicas (ScheduleWakeup/Monitor, intervalo proporcional ao job) e a cada acordada mande
+  o resumo real do momento; ao final, feche com `--done`/`--fail` (modo 2).
+- Conteúdo: 1 linha concreta (o que já foi, o que está rodando, % ou contagem se houver).
+  Título "Status do trabalho". Nunca inventar progresso — se não houver novidade, diga isso
+  ("ainda na suíte de integração, sem falhas até aqui").
 
 ## Hooks (automático, sem invocação)
 

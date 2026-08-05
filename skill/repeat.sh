@@ -36,7 +36,7 @@ esac
 
 INT="$1"
 MSG="${2:?usage: repeat.sh SECONDS MESSAGE [TITLE]}"
-TITLE="${3:-⏰ Lembrete}"
+TITLE="${3:-Lembrete}"
 
 nohup env NOTIFY_BIN="$DIR/notify.sh" NOTIFY_MSG="$MSG" NOTIFY_TITLE="$TITLE" NOTIFY_INT="$INT" \
   bash -c 'while true; do sleep "$NOTIFY_INT"; "$NOTIFY_BIN" "$NOTIFY_MSG" "$NOTIFY_TITLE"; done' \

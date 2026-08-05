@@ -10,7 +10,7 @@ case "$MSG" in
   *permission*|*permissão*|*approval*)
     exec "$HOME/.claude/skills/notify/notify.sh" --approval "$MSG" ;;
   *waiting*|*input*|*esperando*)
-    exec "$HOME/.claude/skills/notify/notify.sh" "$MSG" "💬 Claude está esperando você" "" "Submarine" ;;
+    exec "$HOME/.claude/skills/notify/notify.sh" "$MSG" "Claude está esperando você" "" "Submarine" ;;
   *)
-    exec "$HOME/.claude/skills/notify/notify.sh" --approval "$MSG" "🔔 Claude Code" ;;
+    exec "$HOME/.claude/skills/notify/notify.sh" --approval "$MSG" "Claude Code" ;;
 esac

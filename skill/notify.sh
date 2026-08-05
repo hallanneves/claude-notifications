@@ -16,10 +16,10 @@ SUBTITLE="${3:-}"
 SOUND="${4:-}"
 
 case "$TYPE" in
-  approval) : "${TITLE:=🔐 Aprovação necessária}"; : "${SOUND:=Submarine}" ;;
-  done)     : "${TITLE:=✅ Trabalho concluído}";   : "${SOUND:=Hero}" ;;
-  fail)     : "${TITLE:=❌ Algo falhou}";          : "${SOUND:=Basso}" ;;
-  info)     : "${TITLE:=🔔 Claude Code}";          : "${SOUND:=Glass}" ;;
+  approval) : "${TITLE:=Aprovação necessária}"; : "${SOUND:=Submarine}" ;;
+  done)     : "${TITLE:=Trabalho concluído}";   : "${SOUND:=Hero}" ;;
+  fail)     : "${TITLE:=Algo falhou}";          : "${SOUND:=Basso}" ;;
+  info)     : "${TITLE:=Claude Code}";          : "${SOUND:=Glass}" ;;
 esac
 
 if command -v terminal-notifier >/dev/null 2>&1; then

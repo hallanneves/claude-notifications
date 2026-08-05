@@ -30,6 +30,12 @@ else
   echo "✅ hooks adicionados em $SETTINGS"
 fi
 
+if command -v terminal-notifier >/dev/null 2>&1; then
+  ./set-claude-icon.sh || echo "⚠️  não consegui aplicar o ícone do Claude (rode ./set-claude-icon.sh depois)"
+else
+  echo "ℹ️  Recomendado: brew install terminal-notifier && ./set-claude-icon.sh (ícone do Claude + clique foca o VSCode)"
+fi
+
 echo
 echo "🔔 Teste agora:  $DEST/notify.sh --done \"Instalação concluída\""
 echo "➡️  Reinicie o Claude Code (ou abra /hooks) para os hooks carregarem."

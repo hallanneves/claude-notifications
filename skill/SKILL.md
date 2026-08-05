@@ -1,6 +1,6 @@
 ---
 name: notify
-description: Notificação nativa do macOS (banner + som, estilo Slack). Use quando o usuário pedir /notify, "me avisa/notifica quando X terminar" (build, testes, deploy, CI, job longo), lembretes periódicos ("me lembra a cada 30 min"), ou para parar lembretes ativos (/notify stop, /notify list). Sons e emojis semânticos por tipo de evento (aprovação/info/pronto/falha).
+description: Notificação nativa do macOS (banner + som, estilo Slack). Use quando o usuário pedir /notify, "me avisa/notifica quando X terminar" (build, testes, deploy, CI, job longo), lembretes periódicos ("me lembra a cada 30 min"), ou para parar lembretes ativos (/notify stop, /notify list). Sons semânticos por tipo de evento (aprovação/info/pronto/falha); ícone do Claude no banner; sem emojis nas mensagens.
 ---
 
 # notify — notificações nativas do macOS
@@ -8,23 +8,25 @@ description: Notificação nativa do macOS (banner + som, estilo Slack). Use qua
 Scripts neste diretório (`~/.claude/skills/notify/`):
 
 - `notify.sh [--approval|--info|--done|--fail] "mensagem" ["título"] ["subtítulo"] ["som"]` —
-  banner nativo agora. O tipo preseta título com emoji + som; título/som explícitos sobrepõem.
+  banner nativo agora. O tipo preseta título + som; título/som explícitos sobrepõem.
 - `repeat.sh <segundos> "mensagem" ["título"]` — lembrete periódico detached (sobrevive à
   sessão). `repeat.sh stop` mata todos; `repeat.sh list` lista.
 - `notify-hook.sh` / `stop-hook.sh` / `approval-hook.sh` — adaptadores de hook (Notification /
   Stop / PermissionRequest), ligados em `~/.claude/settings.json`. Não são chamados pela skill.
 
-## Sistema de sons e ícones (SEMPRE respeitar)
+## Identidade visual e sonora (SEMPRE respeitar)
+
+- **SEM emojis** em títulos e mensagens de notificação — preferência explícita do Hallan.
+  A identificação visual vem do **ícone do Claude** no banner (transplantado no
+  terminal-notifier via `set-claude-icon.sh` do repo); a semântica vem do **som + título**.
+- Sons nunca trocam de semântica: Hero é só sucesso, Basso é só falha.
 
 | Tipo | Flag | Título default | Som | Quando usar |
 |---|---|---|---|---|
-| Aprovação | `--approval` | 🔐 Aprovação necessária | Submarine | reservado aos hooks |
-| Informativo | `--info` (default) | 🔔 Claude Code | Glass | notificação que o usuário pediu |
-| Pronto | `--done` | ✅ Trabalho concluído | Hero | job terminou com sucesso |
-| Falha | `--fail` | ❌ Algo falhou | Basso | job quebrou |
-
-Pode-se trocar o emoji do título por um mais contextual (⏰ lembrete, 🚀 deploy, 🧪 testes),
-mas **nunca** misturar som de um tipo com semântica de outro (Hero é só sucesso, Basso é só falha).
+| Aprovação | `--approval` | Aprovação necessária | Submarine | reservado aos hooks |
+| Informativo | `--info` (default) | Claude Code | Glass | notificação que o usuário pediu |
+| Pronto | `--done` | Trabalho concluído | Hero | job terminou com sucesso |
+| Falha | `--fail` | Algo falhou | Basso | job quebrou |
 
 ## Modos de uso
 
@@ -57,23 +59,27 @@ bash ~/.claude/skills/notify/repeat.sh <intervalo_em_segundos> "<mensagem>"
 ## Hooks (automático, sem invocação)
 
 Configurados em `~/.claude/settings.json`:
-- **Notification** → `notify-hook.sh`: banner 🔐/💬 quando o Claude Code pede permissão ou espera input.
-- **Stop** → `stop-hook.sh`: banner ✅ "trabalho pronto" ao fim do turno — **suprimido** quando
+- **Notification** → `notify-hook.sh`: banner quando o Claude Code pede permissão ou espera input.
+- **Stop** → `stop-hook.sh`: banner "trabalho pronto" ao fim do turno — **suprimido** quando
   VSCode/terminal está em primeiro plano (senão toca a cada resposta). `NOTIFY_FORCE=1` ignora o gate.
 - **PermissionRequest** → `approval-hook.sh`: quando você está fora do editor, dialog nativo com
-  **Aprovar / Abrir no editor / Negar** que devolve a decisão ao Claude Code; timeout/erro cai no
-  prompt normal do terminal (fail-safe).
+  **Aprovar / Abrir no editor / Negar** que devolve a decisão ao Claude Code (allow e deny
+  confirmados ao vivo). Ferramentas de interação (AskUserQuestion etc.) são puladas. Timeout/erro
+  cai no prompt normal do terminal (fail-safe). Comando já allowlistado não gera prompt → hook
+  nem roda (não é bug).
 
 ## Gotchas
 
-- Com `terminal-notifier` instalado (está, via brew desde 2026-08-05), **clicar na notificação
-  foca o VSCode** (`NOTIFY_ACTIVATE` muda o bundle id do app-alvo). Sem ele, o fallback é
-  `osascript`: banner sai como "Script Editor" e o clique/"Mostrar" abre uma janela vazia do
-  Script Editor (quirk do macOS — notificação de CLI não tem app dono). O ícone real do app não
-  é customizável em nenhum dos casos; a identidade visual vem do emoji no título. Se nada
-  aparecer: Ajustes do Sistema → Notificações → permitir o app (terminal-notifier ou Script
-  Editor). Modo Foco/Não Perturbe silencia.
-- Aspas e emoji na mensagem são seguros — os scripts escapam antes do AppleScript.
+- O ícone do Claude vem de um swap do ícone do `terminal-notifier.app`
+  (`set-claude-icon.sh` no repo). **`brew upgrade terminal-notifier` reverte** — re-rodar o
+  script. Clicar na notificação foca o VSCode (`NOTIFY_ACTIVATE` muda o bundle id).
+- Sem terminal-notifier, o fallback é `osascript`: banner sai como "Script Editor" e o
+  clique/"Mostrar" abre uma janela vazia do Script Editor (quirk do macOS).
+- O dialog de aprovação usa `activate` antes do `display dialog` — sem isso a janela nasce
+  atrás do app em foco e ninguém vê.
+- Se nada aparecer: Ajustes do Sistema → Notificações → permitir o app (terminal-notifier ou
+  Script Editor). Modo Foco/Não Perturbe silencia.
+- Aspas na mensagem são seguras — os scripts escapam antes do AppleScript.
 - Fonte canônica/instalação: repo `hallanneves/claude-notifications` (GitHub). Ao mudar algo
   aqui, refletir lá.
 - Utilitário pessoal do Hallan (macOS) — não referenciar em código/docs de repositório de trabalho.

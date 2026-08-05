@@ -36,7 +36,9 @@ PROMPT="Claude quer usar: $TOOL"
 # Banner + sound so the dialog is never missed even off-screen
 "$HOME/.claude/skills/notify/notify.sh" --approval "$TOOL: ${DETAIL:-sem detalhes}" >/dev/null 2>&1 || true
 
-RES="$(osascript -e "display dialog \"$PROMPT\" with title \"Claude Code — aprovação\" buttons {\"Negar\", \"Abrir no editor\", \"Aprovar\"} default button \"Abrir no editor\" giving up after 50 with icon caution" 2>/dev/null)" || RES=""
+# 'activate' first: a dialog from a background process opens BEHIND the
+# frontmost app (or on another Space) unless osascript activates itself.
+RES="$(osascript -e "activate" -e "display dialog \"$PROMPT\" with title \"Claude Code — aprovação\" buttons {\"Negar\", \"Abrir no editor\", \"Aprovar\"} default button \"Abrir no editor\" giving up after 50 with icon caution" 2>/dev/null)" || RES=""
 
 case "$RES" in
   *"gave up:true"*)

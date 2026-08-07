@@ -17,8 +17,8 @@ case "${1:?usage: repeat.sh SECONDS MESSAGE [TITLE] | stop | list}" in
   stop)
     if [ -s "$PIDFILE" ]; then
       while read -r pid rest; do
-        if is_ours "$pid"; then
-          kill "$pid" 2>/dev/null && echo "stopped reminder pid $pid" || true
+        if is_ours "$pid" && kill "$pid" 2>/dev/null; then
+          echo "stopped reminder pid $pid"
         fi
       done < "$PIDFILE"
       : > "$PIDFILE"

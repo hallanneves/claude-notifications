@@ -3,6 +3,16 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.2.1] — 2026-08-07
+
+### Fixed
+- `repeat.sh stop` used `kill … && echo … || true`, where the `|| true` also covers a failing
+  `echo` rather than only a failing `kill` (SC2015). Rewritten as a plain `if`.
+
+### Changed
+- CI pins shellcheck to v0.11.0. The runner image's own version differs from a typical local
+  install, which is how the above slipped through a green local lint.
+
 ## [1.2.0] — 2026-08-07
 
 ### Added

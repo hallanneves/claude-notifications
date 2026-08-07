@@ -1,5 +1,7 @@
 #!/bin/bash
 # Installer for the /notify skill + notification hooks (Claude Code, macOS).
+# Safe to re-run: hooks already pointing at the skill are left alone, hooks
+# from other tools are never overwritten (per-event manual-merge warning).
 set -euo pipefail
 
 cd "$(dirname "$0")"
@@ -20,17 +22,36 @@ echo "   (config opcional: copie $DEST/notify.conf.example para notify.conf e ed
 SETTINGS="$HOME/.claude/settings.json"
 [ -f "$SETTINGS" ] || echo '{}' > "$SETTINGS"
 
-if jq -e '.hooks.Notification, .hooks.Stop, .hooks.PermissionRequest | select(. != null)' "$SETTINGS" >/dev/null 2>&1; then
-  echo "⚠️  $SETTINGS já tem hooks em Notification/Stop/PermissionRequest."
-  echo "    Faça o merge manual usando o conteúdo de hooks.json (não vou sobrescrever)."
-else
-  cp "$SETTINGS" "${SETTINGS}.bak"
-  tmp="$(mktemp)"
-  jq -s '.[0].hooks = ((.[0].hooks // {}) + .[1].hooks) | .[0]' "$SETTINGS" hooks.json > "$tmp"
-  jq -e . "$tmp" >/dev/null
-  mv "$tmp" "$SETTINGS"
-  echo "✅ hooks adicionados em $SETTINGS"
+# One timestamped backup per run, taken only if we are about to modify.
+BACKUP=""
+ensure_backup() {
+  [ -n "$BACKUP" ] && return 0
+  BACKUP="${SETTINGS}.bak.$(date +%Y%m%d-%H%M%S)"
+  cp "$SETTINGS" "$BACKUP"
+}
+
+MANUAL=""
+for EV in Notification Stop PermissionRequest; do
+  if ! jq -e --arg ev "$EV" '.hooks[$ev]' "$SETTINGS" >/dev/null 2>&1; then
+    ensure_backup
+    tmp="$(mktemp)"
+    jq -s --arg ev "$EV" \
+      '.[0].hooks = ((.[0].hooks // {}) + {($ev): .[1].hooks[$ev]}) | .[0]' \
+      "$SETTINGS" hooks.json > "$tmp"
+    jq -e . "$tmp" >/dev/null
+    mv "$tmp" "$SETTINGS"
+    echo "✅ hook $EV adicionado em $SETTINGS"
+  elif jq -e --arg ev "$EV" '.hooks[$ev] | tostring | contains("/skills/notify/")' "$SETTINGS" >/dev/null 2>&1; then
+    echo "✅ hook $EV já configurado — nada a fazer"
+  else
+    MANUAL="$MANUAL $EV"
+  fi
+done
+if [ -n "$MANUAL" ]; then
+  echo "⚠️  Você já tem hooks seus em:$MANUAL — não vou sobrescrever."
+  echo "    Faça o merge manual desses eventos usando o conteúdo de hooks.json."
 fi
+[ -n "$BACKUP" ] && echo "   (backup do settings.json em $BACKUP)"
 
 if command -v terminal-notifier >/dev/null 2>&1; then
   ./install-notifier-app.sh || echo "⚠️  não consegui criar o app de notificação (rode ./install-notifier-app.sh depois)"

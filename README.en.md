@@ -49,6 +49,11 @@ Smart behaviors:
 - **Useful click**: clicking any notification focuses VSCode (configurable via
   `NOTIFY_ACTIVATE=<bundle-id>`).
 - **Periodic reminders**: `repeat.sh` runs detached and survives the end of the session.
+- **New-version notice**: once a day, the end of a turn checks whether the repo carries a
+  newer tag. If it does, a **clickable** banner arrives and opens a dialog offering
+  **I̲nstall / View on G̲itHub / Cancel (Esc)** — a click never installs anything on its own:
+  this is open source and you are entitled to read what you are about to run. Silent when
+  already current, and switched off with `NOTIFY_UPDATE_CHECK=0`.
 
 ## Install
 
@@ -134,7 +139,27 @@ Straight from the shell (outside Claude):
 ~/.claude/skills/notify/notify.sh "message" "Title" "subtitle" "Ping"
 ~/.claude/skills/notify/repeat.sh 1800 "stretch!"     # every 30 min
 ~/.claude/skills/notify/repeat.sh stop
+~/.claude/skills/notify/check-update.sh --force       # any new version?
+~/.claude/skills/notify/update.sh                     # update now
 ```
+
+### Updating
+
+The `Stop` hook runs `check-update.sh` detached, at most once a day (the query is a
+`git ls-remote` over tags — no clone, no auth, no API). When the remote carries a tag newer
+than the installed `VERSION`, a clickable banner arrives.
+
+The click **installs nothing**: it opens a dialog with three ways out — **I̲nstall**, **View
+on G̲itHub** (opens the releases page and exits without touching anything) and **Cancel**,
+bound to `Esc`. That detour is deliberate: this is free software about to run an installer on
+your machine, so reading the diff first should be one click, not an excavation.
+`update.sh --yes` skips the dialog for anyone scripting it.
+
+On install it runs `git pull --ff-only` in the clone it was installed from (recorded at
+install time) and reinstalls; if that clone is gone, it shallow-clones the canonical repo into
+a temporary directory. Nothing is forced: a clone with local commits or uncommitted work fails
+the fast-forward and you get a failure banner instead of a rewritten history. After updating,
+**restart Claude Code** so the hooks reload.
 
 ## How it works
 
@@ -145,6 +170,7 @@ claude-notifications/
 ├── install-notifier-app.sh # creates the "Claude Code" app in ~/Applications (permission + isolated icon)
 ├── set-claude-icon.sh      # applies the Claude icon to the dedicated app (or terminal-notifier)
 ├── hooks.json              # hook snippet for manual merges into settings.json
+├── VERSION                 # installed version, compared against the remote's tags
 ├── assets/
 │   ├── claude-logo.png     # 1024×1024 icon (generated from the SVG next to it)
 │   └── claude-logo.svg     # vector source of the icon
@@ -157,7 +183,9 @@ claude-notifications/
 │   ├── notify-hook.sh      # Notification hook → routes by notification_type
 │   ├── stop-hook.sh        # Stop hook → "done" banner (suppressed with editor focused)
 │   ├── approval-hook.sh    # PermissionRequest hook → Approve/Deny dialog
-│   └── approval-dialog.js  # the dialog itself (NSAlert with shortcuts + Claude icon)
+│   ├── dialog.js           # generic NSAlert (underlined shortcuts + Claude icon)
+│   ├── check-update.sh     # is there a newer version? (rate-limited, clickable banner)
+│   └── update.sh           # the Install / View on GitHub / Cancel dialog, then reinstall
 └── tests/                  # bats suite (runs in CI on macOS + shellcheck)
 ```
 
@@ -211,6 +239,13 @@ NOTIFY_TN="$HOME/Applications/Claude Code Notifier.app/Contents/MacOS/terminal-n
 
 # Seconds the approval dialog waits before giving up (default: 50).
 NOTIFY_DIALOG_TIMEOUT=50
+
+# Update check (clickable banner). 0 turns it off.
+NOTIFY_UPDATE_CHECK=0
+# Minimum seconds between checks (default: 86400 = one day).
+NOTIFY_UPDATE_INTERVAL=86400
+# Repository consulted — point it at a fork to track that instead.
+NOTIFY_UPDATE_REPO="https://github.com/hallanneves/claude-notifications.git"
 ```
 
 Other knobs:

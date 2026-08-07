@@ -50,11 +50,18 @@ elif [ -z "$TN" ]; then
 fi
 
 if [ -n "$TN" ]; then
-  # Clicking the notification focuses the editor instead of macOS's blank
-  # Script Editor fallback. Override the target app via NOTIFY_ACTIVATE
-  # (notify.conf or environment).
-  args=(-message "$MSG" -title "$TITLE" -sound "$SOUND" -activate "${NOTIFY_ACTIVATE:-$NOTIFY_ACTIVATE_DEFAULT}")
+  args=(-message "$MSG" -title "$TITLE" -sound "$SOUND")
   [ -n "$SUBTITLE" ] && args+=(-subtitle "$SUBTITLE")
+  if [ -n "${NOTIFY_EXECUTE:-}" ]; then
+    # Turns the banner into an action: clicking it runs this command instead
+    # of focusing an app. Mutually exclusive with -activate.
+    args+=(-execute "$NOTIFY_EXECUTE")
+  else
+    # Clicking the notification focuses the editor instead of macOS's blank
+    # Script Editor fallback. Override the target app via NOTIFY_ACTIVATE
+    # (notify.conf or environment).
+    args+=(-activate "${NOTIFY_ACTIVATE:-$NOTIFY_ACTIVATE_DEFAULT}")
+  fi
   "$TN" "${args[@]}"
 else
   esc() { printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'; }

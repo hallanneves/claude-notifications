@@ -12,6 +12,11 @@ load_notify_conf
 
 INPUT="$(cat)"
 
+# Detached and rate-limited to once a day: it must never delay the turn, and
+# it runs before the foreground gate so an update is announced even while you
+# are looking at the editor.
+( "$DIR/check-update.sh" >/dev/null 2>&1 & ) 2>/dev/null
+
 front_is_editor && exit 0
 
 PROJ="$(printf '%s' "$INPUT" | jq -r '.cwd // empty' 2>/dev/null)"

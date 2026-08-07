@@ -40,30 +40,9 @@ PROMPT="Claude quer usar: $TOOL"
 # Banner + sound so the dialog is never missed even off-screen
 "$DIR/notify.sh" --approval "$TOOL: ${DETAIL:-sem detalhes}" >/dev/null 2>&1 || true
 
-# The dialog owns no clock of its own (an NSTimer never fires inside a modal
-# run loop), so the timeout lives here: run it detached and kill it if nobody
-# answers. A killed dialog prints nothing, which is the fail-safe path.
-OUT="$(mktemp)"
-TIMED_OUT="$OUT.timeout"
-trap 'rm -f "$OUT" "$TIMED_OUT"' EXIT
-osascript -l JavaScript "$DIR/approval-dialog.js" "$PROMPT" "$DIR/claude-logo.png" >"$OUT" 2>/dev/null &
-DIALOG_PID=$!
-# The watchdog MUST NOT inherit our stdout: a command substitution upstream
-# stays blocked until every writer closes the pipe, which would hold the
-# decision hostage for the full timeout after the user already answered.
-( sleep "${NOTIFY_DIALOG_TIMEOUT:-50}"; : > "$TIMED_OUT"; kill "$DIALOG_PID" 2>/dev/null ) >/dev/null 2>&1 &
-WATCHDOG=$!
-wait "$DIALOG_PID" 2>/dev/null
-{ kill "$WATCHDOG" 2>/dev/null; wait "$WATCHDOG" 2>/dev/null; } 2>/dev/null
-
-# A dialog torn down mid-flight can still flush a token (AppKit unwinds the
-# modal session as the process dies, and that has produced a bogus "approve").
-# Whatever the corpse wrote, a timeout is never a decision.
-if [ -f "$TIMED_OUT" ]; then
-  RES=""
-else
-  RES="$(cat "$OUT")"
-fi
+RES="$(run_dialog "Claude Code — aprovação" "$PROMPT" "$DIR/claude-logo.png" \
+  "Aprovar:a:approve|Negar:n:deny|Abrir no editor:e:editor|Fechar (Esc):esc:ignore" \
+  "${NOTIFY_DIALOG_TIMEOUT:-50}")"
 
 case "$RES" in
   approve)

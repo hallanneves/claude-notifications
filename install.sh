@@ -18,6 +18,13 @@ cp -f skill/SKILL.md skill/notify.conf.example skill/*.sh skill/*.js "$DEST/"
 # The approval dialog sets this as its NSAlert icon; without it the alert
 # borrows osascript's generic document icon.
 cp -f assets/claude-logo.png "$DEST/claude-logo.png"
+cp -f VERSION "$DEST/VERSION"
+# Lets update.sh pull into this working copy instead of cloning a fresh one.
+if [ -d .git ]; then
+  pwd > "$DEST/.source-repo"
+else
+  rm -f "$DEST/.source-repo"
+fi
 chmod +x "$DEST"/*.sh
 echo "✅ skill instalada em $DEST"
 echo "   (config opcional: copie $DEST/notify.conf.example para notify.conf e edite)"

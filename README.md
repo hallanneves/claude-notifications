@@ -46,6 +46,11 @@ Comportamentos inteligentes:
 - **Clique útil**: clicar em qualquer notificação foca o VSCode (configurável via
   `NOTIFY_ACTIVATE=<bundle-id>`).
 - **Lembretes periódicos**: `repeat.sh` roda detached e sobrevive ao fim da sessão.
+- **Aviso de versão nova**: uma vez por dia, o fim de turno checa se há uma tag mais recente
+  no repositório. Se houver, chega um banner **clicável** que abre uma janela com
+  **I̲nstalar / Ver no G̲itHub / Cancelar (Esc)** — clicar nunca instala nada sozinho: isto é
+  código aberto e você tem o direito de ler o que vai rodar antes. Silencioso quando já está
+  atualizado, e desligável com `NOTIFY_UPDATE_CHECK=0`.
 
 ## Instalação
 
@@ -121,6 +126,7 @@ o script precisa ser re-rodado.
   o exit code).
 - *"me lembra a cada 30 minutos de alongar"* — lembrete periódico detached.
 - `/notify list` / `/notify stop` — gerencia lembretes ativos.
+- *"tem versão nova?"* — checa na hora e atualiza se você quiser.
 
 Direto no shell (fora do Claude):
 
@@ -130,7 +136,27 @@ Direto no shell (fora do Claude):
 ~/.claude/skills/notify/notify.sh "mensagem" "Título" "subtítulo" "Ping"
 ~/.claude/skills/notify/repeat.sh 1800 "alongar!"     # a cada 30 min
 ~/.claude/skills/notify/repeat.sh stop
+~/.claude/skills/notify/check-update.sh --force       # tem versão nova?
+~/.claude/skills/notify/update.sh                     # atualiza agora
 ```
+
+### Atualização
+
+O hook `Stop` roda `check-update.sh` detached, no máximo uma vez por dia (a consulta é um
+`git ls-remote` nas tags — sem clone, sem autenticação, sem API). Quando o remoto tem uma tag
+maior que o `VERSION` instalado, chega um banner clicável.
+
+O clique **não instala nada**: abre uma janela com três saídas — **I̲nstalar**, **Ver no
+G̲itHub** (abre a página de releases no navegador e sai sem tocar em nada) e **Cancelar**,
+ligado ao `Esc`. Esse desvio é proposital: é software livre rodando um instalador na sua
+máquina, então ler o diff antes tem que ser um clique, não uma escavação. `update.sh --yes`
+pula a janela para quem quer automatizar.
+
+Ao instalar, ele dá `git pull --ff-only` no clone de origem (registrado na instalação) e
+reinstala; se o clone sumiu, clona o repositório canônico num diretório temporário. Nada é
+forçado: um clone com commits locais ou mudanças não commitadas faz o fast-forward falhar, e
+você recebe um banner de falha em vez de ter o histórico reescrito. Depois de atualizar,
+**reinicie o Claude Code** para os hooks recarregarem.
 
 ## Como funciona
 
@@ -141,6 +167,7 @@ claude-notifications/
 ├── install-notifier-app.sh # cria o app "Claude Code" em ~/Applications (permissão + ícone isolado)
 ├── set-claude-icon.sh      # aplica o ícone do Claude no app dedicado (ou no terminal-notifier)
 ├── hooks.json              # snippet dos hooks p/ merge manual no settings.json
+├── VERSION                 # versão instalada, comparada com as tags do remoto
 ├── assets/
 │   ├── claude-logo.png     # ícone 1024×1024 (gerado do SVG ao lado)
 │   └── claude-logo.svg     # fonte vetorial do ícone
@@ -153,7 +180,9 @@ claude-notifications/
 │   ├── notify-hook.sh      # hook Notification → roteia por notification_type
 │   ├── stop-hook.sh        # hook Stop → banner "pronto" (suprimido c/ editor em foco)
 │   ├── approval-hook.sh    # hook PermissionRequest → dialog Aprovar/Negar
-│   └── approval-dialog.js  # o dialog em si (NSAlert com atalhos e ícone do Claude)
+│   ├── dialog.js           # NSAlert genérico (atalhos sublinhados + ícone do Claude)
+│   ├── check-update.sh     # há versão nova? (rate-limited, banner clicável)
+│   └── update.sh           # baixa e reinstala — é o que o clique do banner roda
 └── tests/                  # suíte bats (roda no CI em macOS + shellcheck)
 ```
 

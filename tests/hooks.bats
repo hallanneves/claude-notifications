@@ -113,7 +113,8 @@ approval() { "$WORK/skill/approval-hook.sh"; }
   run bash -c 'echo "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"ls\"}}" | "$0"' "$WORK/skill/approval-hook.sh"
   [ "$status" -eq 0 ]
   calls="$(cat "$WORK/osascript.calls")"
-  [[ "$calls" == *"approval-dialog.js"* ]]
+  [[ "$calls" == *"dialog.js"* ]]
+  [[ "$calls" == *"Aprovar:a:approve"* ]]
   [[ "$calls" == *"claude-logo.png"* ]]
 }
 

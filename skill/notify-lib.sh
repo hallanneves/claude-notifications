@@ -12,10 +12,16 @@ DEDICATED_BUNDLE_ID="com.github.hallanneves.claude-notifier"
 # chosen. NOTIFY_ACTIVATE (notify.conf or environment) overrides.
 NOTIFY_ACTIVATE_DEFAULT="com.microsoft.VSCode"
 
+# Where check-update.sh looks for newer tags and update.sh clones from when the
+# original working copy is gone. Override with NOTIFY_UPDATE_REPO to track a
+# fork. load_notify_conf may reset this, so it is only a default.
+NOTIFY_UPDATE_REPO_DEFAULT="https://github.com/hallanneves/claude-notifications.git"
+
 # Optional user config, shared by every script that sources this lib.
 load_notify_conf() {
   # shellcheck disable=SC1090,SC1091
   [ -f "$HOME/.claude/skills/notify/notify.conf" ] && . "$HOME/.claude/skills/notify/notify.conf"
+  : "${NOTIFY_UPDATE_REPO:=$NOTIFY_UPDATE_REPO_DEFAULT}"
   return 0
 }
 
@@ -38,6 +44,38 @@ front_is_editor() {
     esac
   fi
   return 1
+}
+
+# Shows a native dialog and prints the chosen token — empty when the user
+# closed it, it timed out, or anything failed at all. Callers must treat an
+# empty answer as "do nothing".
+#
+# The timeout lives here rather than in the dialog because a scheduled NSTimer
+# never fires inside a modal run loop. And the watchdog MUST NOT inherit our
+# stdout: a command substitution upstream stays blocked until every writer
+# closes the pipe, which would hold the answer hostage for the full timeout
+# after the user already clicked.
+#
+# usage: run_dialog <title> <body> <icon> <buttons> [timeout_secs]
+run_dialog() {
+  local title="$1" body="$2" icon="$3" buttons="$4" timeout="${5:-50}"
+  local dir out flag pid watchdog res
+  dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  out="$(mktemp)"
+  flag="$out.timeout"
+
+  osascript -l JavaScript "$dir/dialog.js" "$title" "$body" "$icon" "$buttons" >"$out" 2>/dev/null &
+  pid=$!
+  ( sleep "$timeout"; : > "$flag"; kill "$pid" 2>/dev/null ) >/dev/null 2>&1 &
+  watchdog=$!
+  wait "$pid" 2>/dev/null
+  { kill "$watchdog" 2>/dev/null; wait "$watchdog" 2>/dev/null; } 2>/dev/null
+
+  # A dialog torn down mid-flight can still flush a token (AppKit unwinds the
+  # modal session as the process dies). A timeout is never an answer.
+  if [ -f "$flag" ]; then res=""; else res="$(cat "$out")"; fi
+  rm -f "$out" "$flag"
+  printf '%s' "$res"
 }
 
 # Path of the terminal-notifier.app behind the installed CLI. Two layouts exist

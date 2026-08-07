@@ -29,7 +29,7 @@ copy_skill() {
 # Disposable copy of the repo pieces the installer needs.
 copy_repo() {
   mkdir -p "$WORK/repo"
-  cp "$REPO/install.sh" "$REPO/uninstall.sh" "$REPO/hooks.json" "$WORK/repo/"
+  cp "$REPO/install.sh" "$REPO/uninstall.sh" "$REPO/hooks.json" "$REPO/VERSION" "$WORK/repo/"
   cp -R "$REPO/skill" "$WORK/repo/skill"
   cp -R "$REPO/assets" "$WORK/repo/assets"
 }
@@ -40,9 +40,24 @@ stub_notify() {
   cat > "$WORK/skill/notify.sh" <<EOF
 #!/bin/bash
 printf '%s\n' "\$@" >> "$WORK/notify.calls"
+printf 'NOTIFY_EXECUTE=%s\n' "\${NOTIFY_EXECUTE:-}" >> "$WORK/notify.calls"
 printf -- '---\n' >> "$WORK/notify.calls"
 EOF
   chmod +x "$WORK/skill/notify.sh"
+}
+
+# A throwaway git repo standing in for the upstream remote, tagged as given.
+make_fake_remote() {
+  local dir="$WORK/remote" tag
+  mkdir -p "$dir"
+  git init -q "$dir"
+  git -C "$dir" config user.email t@t
+  git -C "$dir" config user.name t
+  echo x > "$dir/a.txt"
+  git -C "$dir" add a.txt
+  git -C "$dir" commit -qm init
+  for tag in "$@"; do git -C "$dir" tag "$tag"; done
+  printf '%s' "$dir"
 }
 
 # lsappinfo stub: FAKE_FRONT controls the reported frontmost app name.

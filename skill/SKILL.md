@@ -11,6 +11,9 @@ Scripts neste diretório (`~/.claude/skills/notify/`):
   banner nativo agora. O tipo preseta título + som; título/som explícitos sobrepõem.
 - `repeat.sh <segundos> "mensagem" ["título"]` — lembrete periódico detached (sobrevive à
   sessão). `repeat.sh stop` mata todos; `repeat.sh list` lista.
+- `check-update.sh [--force]` — tem versão nova publicada? Sem `--force` é rate-limited (1x
+  por dia) e só fala quando há novidade; com `--force` responde sempre.
+- `update.sh` — baixa a versão nova e reinstala. É o que o clique do banner dispara.
 - `notify-hook.sh` / `stop-hook.sh` / `approval-hook.sh` — adaptadores de hook (Notification /
   Stop / PermissionRequest), ligados em `~/.claude/settings.json`. Não são chamados pela skill.
 
@@ -77,6 +80,20 @@ bash ~/.claude/skills/notify/notify.sh "Migração: 3 de 7 arquivos prontos, tes
   Título "Status do trabalho". Nunca inventar progresso — se não houver novidade, diga isso
   ("ainda na suíte de integração, sem falhas até aqui").
 
+### 5. Atualização — "tem versão nova?" / `/notify update`
+
+```bash
+bash ~/.claude/skills/notify/check-update.sh --force   # responde sempre
+bash ~/.claude/skills/notify/update.sh                 # atualiza agora
+```
+
+- A checagem automática roda no hook `Stop`, detached e no máximo 1x por dia; quando há versão
+  nova, manda um banner **clicável**. O clique abre uma janela com **Instalar / Ver no GitHub
+  / Cancelar** — nunca instala direto (é open source: o usuário tem que poder ler antes).
+  Nunca notifica "está atualizado". `update.sh --yes` pula a janela.
+- Depois de atualizar, avise o usuário que os hooks só recarregam ao **reiniciar o Claude Code**.
+- Desligar: `NOTIFY_UPDATE_CHECK=0` no `notify.conf`.
+
 ## Hooks (automático, sem invocação)
 
 Configurados em `~/.claude/settings.json`:
@@ -84,7 +101,7 @@ Configurados em `~/.claude/settings.json`:
 - **Stop** → `stop-hook.sh`: banner "trabalho pronto" ao fim do turno — **suprimido** quando
   VSCode/terminal está em primeiro plano (senão toca a cada resposta). `NOTIFY_FORCE=1` ignora o gate.
 - **PermissionRequest** → `approval-hook.sh`: quando você está fora do editor, dialog nativo
-  (NSAlert via `approval-dialog.js`) com **A**provar / **N**egar / abrir no **e**ditor /
+  (NSAlert via `dialog.js`) com **A**provar / **N**egar / abrir no **e**ditor /
   Fechar, cada um com a letra sublinhada como atalho e **Esc** para fechar sem decidir.
   Devolve a decisão ao Claude Code (allow e deny confirmados ao vivo). Ferramentas de
   interação (AskUserQuestion etc.) são puladas. Fechar/Esc, timeout (`NOTIFY_DIALOG_TIMEOUT`,

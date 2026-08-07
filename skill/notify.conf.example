@@ -19,3 +19,10 @@
 # Segundos que o dialog de aprovação fica aberto antes de desistir e cair no
 # prompt normal do terminal (padrão: 50).
 #NOTIFY_DIALOG_TIMEOUT=50
+
+# Checagem de versão nova (banner clicável que atualiza). 0 desliga.
+#NOTIFY_UPDATE_CHECK=0
+# Intervalo mínimo entre checagens, em segundos (padrão: 86400 = 1 dia).
+#NOTIFY_UPDATE_INTERVAL=86400
+# Repositório consultado — troque para acompanhar um fork.
+#NOTIFY_UPDATE_REPO="https://github.com/hallanneves/claude-notifications.git"

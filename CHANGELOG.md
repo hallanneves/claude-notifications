@@ -3,6 +3,29 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.2.0] — 2026-08-07
+
+### Added
+- Update awareness. The `Stop` hook checks once a day (rate-limited, detached, never
+  delaying a turn) whether the repository carries a version tag newer than the installed
+  `VERSION`, via `git ls-remote` — no clone, no auth, no API. When it does, a clickable
+  banner arrives; it stays quiet when you are already current.
+- Clicking that banner opens a dialog with **Instalar / Ver no GitHub / Cancelar (Esc)**
+  rather than installing straight away. This is open source running an installer on your
+  machine: reading the diff first should be one click. `update.sh --yes` skips the dialog.
+- `update.sh` fast-forwards the clone the skill was installed from and reinstalls, or
+  shallow-clones the canonical repo when that working copy is gone. A clone with local
+  commits or uncommitted work fails the fast-forward and is reported instead of rewritten.
+- `NOTIFY_UPDATE_CHECK`, `NOTIFY_UPDATE_INTERVAL` and `NOTIFY_UPDATE_REPO` (point the last
+  one at a fork to track it), plus a `VERSION` file installed alongside the skill.
+- `notify.sh` honors `NOTIFY_EXECUTE`, turning a banner into an action: clicking it runs a
+  command instead of focusing an app.
+
+### Changed
+- `approval-dialog.js` generalized into `dialog.js`, driven by a button spec
+  (`"Label:key:token|…"`) so the approval and update dialogs share one NSAlert
+  implementation. The timeout watchdog moved into `run_dialog` in `notify-lib.sh` with it.
+
 ## [1.1.0] — 2026-08-07
 
 ### Added

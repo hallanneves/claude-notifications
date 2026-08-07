@@ -1,5 +1,9 @@
 # claude-notifications
 
+[![CI](https://github.com/hallanneves/claude-notifications/actions/workflows/ci.yml/badge.svg)](https://github.com/hallanneves/claude-notifications/actions/workflows/ci.yml)
+
+*English version: [README.en.md](README.en.md)*
+
 Notificações nativas do macOS (estilo Slack) para o **Claude Code**: uma skill `/notify` +
 três hooks que avisam com **banner com o ícone do Claude e um som próprio para cada tipo de
 evento** — inclusive um **dialog com botão de Aprovar/Negar** quando o Claude precisa de
@@ -47,12 +51,15 @@ brew install terminal-notifier   # recomendado (ícone + clique útil)
 O instalador:
 
 1. Copia a skill para `~/.claude/skills/notify/` (vale para **todos** os projetos).
-2. Adiciona os hooks `Notification`, `Stop` e `PermissionRequest` ao `~/.claude/settings.json`
-   — **sem sobrescrever**: se você já tem hooks nesses eventos, ele pede merge manual com o
-   [`hooks.json`](hooks.json).
+2. Adiciona os hooks `Notification`, `Stop` e `PermissionRequest` ao `~/.claude/settings.json`,
+   **evento por evento**: eventos livres são adicionados, eventos que já apontam para a skill
+   são reconhecidos e deixados como estão (re-rodar o instalador é seguro — é assim que se
+   atualiza), e eventos com hooks **de outras ferramentas** nunca são sobrescritos — ele pede
+   merge manual com o [`hooks.json`](hooks.json) só para esses. Antes de qualquer alteração,
+   faz um backup timestampado (`settings.json.bak.<data>`).
 3. Se o terminal-notifier estiver instalado, cria o app **"Claude Code"** em `~/Applications`
    com o ícone do Claude (roda o `install-notifier-app.sh`) e o abre uma vez, para o macOS
-   pedir a permissão de notificação.
+   pedir a permissão de notificação (só na criação — atualizações não re-abrem o app).
 
 Depois:
 
@@ -119,20 +126,24 @@ Direto no shell (fora do Claude):
 
 ```
 claude-notifications/
-├── install.sh              # instala skill + hooks (+ app, se possível); faz backup do settings.json
+├── install.sh              # instala skill + hooks (+ app, se possível); idempotente, com backup
+├── uninstall.sh            # remove skill, app e SÓ os hooks da skill (preserva os alheios)
 ├── install-notifier-app.sh # cria o app "Claude Code" em ~/Applications (permissão + ícone isolado)
 ├── set-claude-icon.sh      # aplica o ícone do Claude no app dedicado (ou no terminal-notifier)
-├── bundle-lib.sh           # resolução de bundle compartilhada pelos dois scripts acima
 ├── hooks.json              # snippet dos hooks p/ merge manual no settings.json
-├── assets/claude-logo.png
-└── skill/
-    ├── SKILL.md            # instruções que o Claude Code carrega (/notify)
-    ├── notify.sh           # banner nativo (terminal-notifier ou osascript)
-    ├── repeat.sh           # lembretes periódicos detached (start/list/stop)
-    ├── notify.conf.example # config opcional (app do clique, apps que suprimem)
-    ├── notify-hook.sh      # hook Notification → banner "precisa de você"
-    ├── stop-hook.sh        # hook Stop → banner "pronto" (suprimido c/ editor em foco)
-    └── approval-hook.sh    # hook PermissionRequest → dialog Aprovar/Negar
+├── assets/
+│   ├── claude-logo.png     # ícone 1024×1024 (gerado do SVG ao lado)
+│   └── claude-logo.svg     # fonte vetorial do ícone
+├── skill/
+│   ├── SKILL.md            # instruções que o Claude Code carrega (/notify)
+│   ├── notify-lib.sh       # constantes + helpers compartilhados (bundle, gate de foreground)
+│   ├── notify.sh           # banner nativo (terminal-notifier ou osascript)
+│   ├── repeat.sh           # lembretes periódicos detached (start/list/stop)
+│   ├── notify.conf.example # config opcional (app do clique, apps que suprimem)
+│   ├── notify-hook.sh      # hook Notification → roteia por notification_type
+│   ├── stop-hook.sh        # hook Stop → banner "pronto" (suprimido c/ editor em foco)
+│   └── approval-hook.sh    # hook PermissionRequest → dialog Aprovar/Negar
+└── tests/                  # suíte bats (roda no CI em macOS + shellcheck)
 ```
 
 Notas de segurança do design:
@@ -140,8 +151,11 @@ Notas de segurança do design:
 - `repeat.sh stop` só mata processos comprovadamente dele (verifica um marker no `ps` antes do
   `kill` — PID reciclado pós-reboot nunca é alvo) e rejeita intervalos inválidos ou menores
   que 5s (um `sleep` quebrado viraria um loop de spam de notificações).
-- O `install.sh` faz backup (`settings.json.bak`) antes de mexer nos seus hooks e nunca
-  sobrescreve hooks existentes.
+- O `install.sh` faz backup timestampado (`settings.json.bak.<data>`) antes de mexer nos seus
+  hooks e nunca sobrescreve hooks de outras ferramentas; o `uninstall.sh` remove **apenas** as
+  entradas de hook que apontam para a skill, preservando qualquer outra intacta.
+- O hook `Notification` roteia pelo campo `notification_type` do Claude Code (permissão,
+  espera, agente concluído…), com fallback por palavra-chave para versões antigas.
 
 O gate de primeiro plano usa `lsappinfo` (sem permissões extras). O dialog de aprovação faz
 `activate` antes do `display dialog` — sem isso a janela nasce **atrás** do app em foco. A
@@ -149,9 +163,9 @@ decisão sai como `hookSpecificOutput.decision.behavior: "allow" | "deny"`; qual
 inesperado sai com código 0 e sem output, o que faz o Claude Code mostrar o prompt interativo
 normal.
 
-> **Nota**: o formato de resposta do hook `PermissionRequest` ainda tem lacunas na documentação
-> oficial ([anthropics/claude-code#11891](https://github.com/anthropics/claude-code/issues/11891)),
-> mas os caminhos allow e deny foram testados ao vivo nesta configuração.
+> **Nota**: o formato de resposta usado (`hookSpecificOutput.decision.behavior`) é o formato
+> documentado atual do hook `PermissionRequest`, e os caminhos allow e deny também foram
+> testados ao vivo nesta configuração.
 
 ## Personalização
 
@@ -173,20 +187,35 @@ NOTIFY_TN="$HOME/Applications/Claude Code Notifier.app/Contents/MacOS/terminal-n
 Outros ajustes:
 
 - **Sons**: qualquer nome de `ls /System/Library/Sounds` (Glass, Hero, Basso, Submarine, Ping…),
-  passado como 4º argumento do `notify.sh`.
-- **Ícone**: troque `assets/claude-logo.png` (quadrado, com alpha) e re-rode `set-claude-icon.sh`.
+  passado como 4º argumento do `notify.sh` — nome inexistente gera um aviso no stderr (o banner
+  sairia mudo em silêncio).
+- **Ícone**: troque `assets/claude-logo.png` (quadrado, 1024×1024, com alpha) e re-rode
+  `set-claude-icon.sh`. O PNG é gerado do `assets/claude-logo.svg` com
+  `resvg --width 1024 --height 1024 assets/claude-logo.svg assets/claude-logo.png`.
 - **Lembretes**: intervalo mínimo do `repeat.sh` é 5s (proteção contra loop de spam).
 
 ## Desinstalar
 
 ```bash
-rm -rf ~/.claude/skills/notify
-rm -rf ~/Applications/"Claude Code Notifier.app"
-brew reinstall terminal-notifier   # só se você tinha usado o ícone no bundle compartilhado
+./uninstall.sh
 ```
 
-E remova as chaves `Notification`, `Stop` e `PermissionRequest` de `hooks` no
-`~/.claude/settings.json` (ou restaure o `settings.json.bak` criado na instalação).
+Remove a skill, o app dedicado e as entradas de hook **da skill** no `~/.claude/settings.json`
+(hooks de outras ferramentas ficam intactos; um backup timestampado é criado antes). Se você
+tinha aplicado o ícone no terminal-notifier compartilhado do Homebrew:
+`brew reinstall terminal-notifier` restaura o original.
+
+## Desenvolvimento
+
+```bash
+brew install shellcheck bats-core
+shellcheck -x -P SCRIPTDIR -S style install.sh uninstall.sh install-notifier-app.sh set-claude-icon.sh skill/*.sh
+bats tests
+```
+
+A mesma dupla roda no CI (GitHub Actions): shellcheck no Ubuntu, bats num runner macOS. Os
+testes usam `HOME` descartável e stubs de `terminal-notifier`/`osascript`/`lsappinfo` — nenhum
+teste dispara notificação real nem toca no seu `settings.json`.
 
 ## Licença
 

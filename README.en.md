@@ -9,17 +9,19 @@ that alert you with a **banner carrying the Claude icon and a distinct sound per
 including a **native dialog with Approve/Deny buttons** when Claude needs permission and you
 are away from the editor.
 
-> Banner titles and dialog strings ship in Brazilian Portuguese (the author's setup). They are
-> plain strings in `skill/notify.sh` and the hook scripts — easy to translate.
+> **Language**: the interface speaks **English and Portuguese**. It follows the macOS locale
+> (Settings → Language & Region); force it with `NOTIFY_LANG="en"` or `"pt"` in `notify.conf`.
+> Adding a language is one file in [`skill/lang/`](skill/lang) — copy `en.sh`, translate the
+> values, name it after the language code.
 
 ## What you get
 
 | Event | Title | Sound | How |
 |---|---|---|---|
-| Claude needs approval | Aprovação necessária | Submarine (sonar) | `Notification` hook + `PermissionRequest` dialog |
+| Claude needs approval | Approval needed | Submarine (sonar) | `Notification` hook + `PermissionRequest` dialog |
 | Notification you asked for | Claude Code | Glass (ding) | `/notify` skill |
-| Work finished | Trabalho concluído | Hero (fanfare) | `Stop` hook + `/notify` on jobs |
-| Something failed | Algo falhou | Basso (low thud) | `/notify` on jobs |
+| Work finished | Work finished | Hero (fanfare) | `Stop` hook + `/notify` on jobs |
+| Something failed | Something failed | Basso (low thud) | `/notify` on jobs |
 
 No emojis in messages: visual identity comes from the **Claude icon** on the banner
 (see `set-claude-icon.sh`), semantics come from sound + title.
@@ -33,10 +35,10 @@ Smart behaviors:
 
   | Button | Shortcut | Effect |
   |---|---|---|
-  | **A**provar (approve) | `A` | returns `allow` to Claude Code |
-  | **N**egar (deny) | `N` | returns `deny` |
-  | Abrir no **e**ditor (open in editor) | `E` | focuses the editor and lets you decide there |
-  | Fechar (close) | `Esc` | closes and ignores, deciding nothing |
+  | **A**pprove | `A` | returns `allow` to Claude Code |
+  | **D**eny | `D` | returns `deny` |
+  | Open in **e**ditor | `E` | focuses the editor and lets you decide there |
+  | Close | `Esc` | closes and ignores, deciding nothing |
 
   Close/Esc, timeout (50s, tunable via `NOTIFY_DIALOG_TIMEOUT`), errors, or "open in editor"
   fall back to the normal terminal prompt — fail-safe. **Return does nothing**: approving
@@ -176,7 +178,8 @@ claude-notifications/
 │   └── claude-logo.svg     # vector source of the icon
 ├── skill/
 │   ├── SKILL.md            # instructions Claude Code loads (/notify)
-│   ├── notify-lib.sh       # shared constants + helpers (bundle paths, foreground gate)
+│   ├── lang/               # string catalogues (en.sh, pt.sh)
+│   ├── notify-lib.sh       # shared constants + helpers (bundles, foreground gate, language)
 │   ├── notify.sh           # native banner (terminal-notifier or osascript)
 │   ├── repeat.sh           # detached periodic reminders (start/list/stop)
 │   ├── notify.conf.example # optional config (click target, suppressing apps)
@@ -226,6 +229,9 @@ mnemonics. Three details that only surface once you try:
 Create `~/.claude/skills/notify/notify.conf` (a `notify.conf.example` is installed next to it):
 
 ```bash
+# Interface language: "en" or "pt". Without this, it follows the macOS locale.
+NOTIFY_LANG="en"
+
 # App focused when clicking a notification (default: VSCode).
 # Find your editor's bundle id: osascript -e 'id of app "Cursor"'
 NOTIFY_ACTIVATE="com.todesktop.230313mzl4w4u92"

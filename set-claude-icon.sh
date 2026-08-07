@@ -11,9 +11,10 @@ set -euo pipefail
 cd "$(dirname "$0")"
 # shellcheck source=skill/notify-lib.sh
 . ./skill/notify-lib.sh
+load_notify_conf
 
 APP="$(icon_target_bundle)" || {
-  echo "❌ terminal-notifier não instalado (brew install terminal-notifier)"
+  echo "❌ $L_APP_NO_TN"
   exit 1
 }
 
@@ -36,9 +37,9 @@ touch "$APP"
 /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$APP"
 killall NotificationCenter 2>/dev/null || true
 
-echo "✅ ícone do Claude aplicado em $APP"
+printf '✅ '; say "$L_ICON_APPLIED" "$APP"
 case "$APP" in
   "$DEDICATED_APP") ;;
-  *) echo "   Este é o terminal-notifier compartilhado: re-rode após um 'brew upgrade'."
-     echo "   Para isolar o ícone só nas notificações do Claude: ./install-notifier-app.sh" ;;
+  *) echo "$L_ICON_SHARED"
+     echo "$L_ICON_SHARED2" ;;
 esac

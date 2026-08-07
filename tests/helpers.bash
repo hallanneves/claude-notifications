@@ -11,6 +11,9 @@ common_setup() {
   ln -s "$(command -v jq)" "$STUB/jq"
   export HOME="$WORK/home"
   mkdir -p "$HOME"
+  # Pinned so assertions never depend on the machine's locale; i18n.bats is
+  # the suite that varies it on purpose.
+  export NOTIFY_LANG=pt
 }
 
 common_teardown() {

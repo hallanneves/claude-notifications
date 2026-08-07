@@ -23,11 +23,11 @@ trap '[ -n "$TMP" ] && rm -rf "$TMP"' EXIT
 
 fail() {
   echo "$1" >&2
-  "$DIR/notify.sh" --fail "$1" "" "detalhes em $LOG"
+  "$DIR/notify.sh" --fail "$1" "" "$(say "$L_UPD_DETAILS" "$LOG")"
   exit 1
 }
 
-command -v git >/dev/null 2>&1 || fail "git não encontrado — não dá para atualizar"
+command -v git >/dev/null 2>&1 || fail "$L_UPD_NO_GIT"
 
 BEFORE="$(cat "$DIR/VERSION" 2>/dev/null)"
 case "$BEFORE" in '') BEFORE="?" ;; esac
@@ -37,20 +37,20 @@ WEB="$(printf '%s' "${NOTIFY_UPDATE_REPO%.git}" \
   | sed -e 's|^git@|https://|' -e 's|^\(https://[^/:]*\):|\1/|')"
 
 if [ "${1:-}" != "--yes" ]; then
-  CHOICE="$(run_dialog "Atualização do claude-notifications" \
-    "Você tem a versão $BEFORE. Instalar a mais recente de $WEB? Veja o que mudou antes de instalar, se preferir." \
+  CHOICE="$(run_dialog "$L_UPD_DIALOG_TITLE" \
+    "$(say "$L_UPD_DIALOG_BODY" "$BEFORE" "$WEB")" \
     "$DIR/claude-logo.png" \
-    "Instalar:i:install|Ver no GitHub:g:github|Cancelar (Esc):esc:cancel" \
+    "$L_UPD_DIALOG_BUTTONS" \
     "${NOTIFY_DIALOG_TIMEOUT:-120}")"
   case "$CHOICE" in
     install) ;;
     github)
       open "$WEB/releases" 2>/dev/null || open "$WEB" 2>/dev/null || true
-      echo "abri $WEB/releases — rode de novo quando quiser instalar"
+      say "$L_UPD_OPENED" "$WEB/releases"
       exit 0 ;;
     *)
       # Cancel, Esc, timeout or any failure: never install by accident.
-      echo "atualização cancelada"
+      echo "$L_UPD_CANCELLED"
       exit 0 ;;
   esac
 fi
@@ -59,16 +59,16 @@ SRC="$(cat "$DIR/.source-repo" 2>/dev/null)"
 if [ -n "$SRC" ] && [ -d "$SRC/.git" ]; then
   REPO="$SRC"
   if ! git -C "$REPO" pull --ff-only >>"$LOG" 2>&1; then
-    fail "não consegui atualizar o clone em $REPO (commits locais ou mudanças não commitadas?)"
+    fail "$(say "$L_UPD_PULL_FAIL" "$REPO")"
   fi
 else
   TMP="$(mktemp -d)"
   REPO="$TMP/claude-notifications"
   git clone --depth 1 "$NOTIFY_UPDATE_REPO" "$REPO" >>"$LOG" 2>&1 \
-    || fail "não consegui clonar $NOTIFY_UPDATE_REPO"
+    || fail "$(say "$L_UPD_CLONE_FAIL" "$NOTIFY_UPDATE_REPO")"
 fi
 
-"$REPO/install.sh" >>"$LOG" 2>&1 || fail "o instalador falhou — veja $LOG"
+"$REPO/install.sh" >>"$LOG" 2>&1 || fail "$(say "$L_UPD_INSTALL_FAIL" "$LOG")"
 
 AFTER="$(cat "$DIR/VERSION" 2>/dev/null)"
 case "$AFTER" in '') AFTER="?" ;; esac
@@ -77,9 +77,12 @@ case "$AFTER" in '') AFTER="?" ;; esac
 rm -f "$DIR/.update-check"
 
 if [ "$BEFORE" = "$AFTER" ]; then
-  MSG="Já estava na versão $AFTER"
+  MSG="$(say "$L_UPD_SAME" "$AFTER")"
 else
-  MSG="Atualizado da $BEFORE para a $AFTER"
+  MSG="$(say "$L_UPD_DONE" "$BEFORE" "$AFTER")"
 fi
 echo "$MSG"
-"$DIR/notify.sh" --done "$MSG — reinicie o Claude Code para recarregar os hooks"
+# The installer just replaced the catalogue: reload so the banner speaks the
+# language the NEW version ships, not the one that started the update.
+load_lang
+"$DIR/notify.sh" --done "$(say "$L_UPD_RESTART" "$MSG")"

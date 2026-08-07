@@ -15,16 +15,17 @@ set -euo pipefail
 cd "$(dirname "$0")"
 # shellcheck source=skill/notify-lib.sh
 . ./skill/notify-lib.sh
+load_notify_conf
 
 SRC="$(brew_bundle)" || {
-  echo "❌ terminal-notifier não encontrado (brew install terminal-notifier)"
+  echo "❌ $L_APP_NO_TN"
   exit 1
 }
 
 CREATED=0
 if [ -d "$DEDICATED_APP" ] && [ "${1:-}" != "--force" ]; then
-  echo "ℹ️  $DEDICATED_APP já existe — mantendo (use --force para recriar)."
-  echo "   Recriar zera a autorização: o macOS pergunta de novo."
+  printf 'ℹ️  '; say "$L_APP_EXISTS" "$DEDICATED_APP"
+  echo "$L_APP_EXISTS2"
 else
   rm -rf "$DEDICATED_APP"
   mkdir -p "$HOME/Applications"
@@ -41,12 +42,12 @@ else
     || "$PB" -c "Add :CFBundleDisplayName string Claude Code" "$PLIST"
   # Editing the plist invalidates the signature — re-sign before anything runs it.
   codesign --force --deep -s - "$DEDICATED_APP"
-  echo "✅ bundle criado em $DEDICATED_APP"
+  printf '✅ '; say "$L_APP_CREATED" "$DEDICATED_APP"
   CREATED=1
 fi
 
 # Applies the icon AND re-signs/re-registers the bundle.
-./set-claude-icon.sh || echo "⚠️  não consegui aplicar o ícone (rode ./set-claude-icon.sh depois)"
+./set-claude-icon.sh || echo "⚠️  $L_APP_ICON_FAIL"
 
 # Registering is not enough: the app has to be LAUNCHED once before macOS will
 # offer the notification permission prompt. Only needed for a fresh bundle —
@@ -55,11 +56,11 @@ if [ "$CREATED" = 1 ]; then
   open "$DEDICATED_APP" 2>/dev/null || true
   sleep 2
   "$DEDICATED_APP/Contents/MacOS/terminal-notifier" \
-    -message "Autorize as notificações para receber os avisos do Claude Code" \
+    -message "$L_APP_AUTHORIZE" \
     -title "Claude Code" -sound Glass >/dev/null 2>&1 || true
 
   echo
-  echo "➡️  O macOS deve mostrar 'Notificações de \"Claude Code\"' — clique em Permitir."
-  echo "   Se não aparecer: Ajustes do Sistema → Notificações → Claude Code → ligue"
-  echo "   'Permitir notificações' e deixe o estilo em Banners ou Alertas."
+  echo "➡️  $L_APP_ALLOW"
+  echo "$L_APP_ALLOW2"
+  echo "$L_APP_ALLOW3"
 fi

@@ -7,6 +7,7 @@ set -euo pipefail
 cd "$(dirname "$0")"
 # shellcheck source=skill/notify-lib.sh
 . ./skill/notify-lib.sh
+load_notify_conf
 
 SETTINGS="$HOME/.claude/settings.json"
 
@@ -26,9 +27,9 @@ if [ -f "$SETTINGS" ] && command -v jq >/dev/null 2>&1; then
     ' "$SETTINGS" > "$tmp"
     jq -e . "$tmp" >/dev/null
     mv "$tmp" "$SETTINGS"
-    echo "✅ hooks removidos de $SETTINGS (backup: $BACKUP)"
+    printf '✅ '; say "$L_UNI_HOOKS_REMOVED" "$SETTINGS" "$BACKUP"
   else
-    echo "ℹ️  nenhum hook da skill em $SETTINGS — nada a remover"
+    printf 'ℹ️  '; say "$L_UNI_NO_HOOKS" "$SETTINGS"
   fi
 fi
 
@@ -39,14 +40,14 @@ fi
 
 if [ -d "$HOME/.claude/skills/notify" ]; then
   rm -rf "$HOME/.claude/skills/notify"
-  echo "✅ skill removida de ~/.claude/skills/notify"
+  echo "✅ $L_UNI_SKILL_REMOVED"
 fi
 
 if [ -d "$DEDICATED_APP" ]; then
   rm -rf "$DEDICATED_APP"
-  echo "✅ app '$DEDICATED_APP_NAME' removido de ~/Applications"
+  printf '✅ '; say "$L_UNI_APP_REMOVED" "$DEDICATED_APP_NAME"
 fi
 
-echo "ℹ️  Se você tinha aplicado o ícone no terminal-notifier compartilhado do Homebrew:"
-echo "    brew reinstall terminal-notifier   # restaura o ícone original"
-echo "➡️  Reinicie o Claude Code para descarregar os hooks."
+echo "ℹ️  $L_UNI_ICON_HINT"
+echo "$L_UNI_ICON_HINT2"
+echo "➡️  $L_UNI_RESTART"

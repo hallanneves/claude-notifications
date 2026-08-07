@@ -22,7 +22,40 @@ load_notify_conf() {
   # shellcheck disable=SC1090,SC1091
   [ -f "$HOME/.claude/skills/notify/notify.conf" ] && . "$HOME/.claude/skills/notify/notify.conf"
   : "${NOTIFY_UPDATE_REPO:=$NOTIFY_UPDATE_REPO_DEFAULT}"
+  # After the conf, so NOTIFY_LANG set there wins over the system locale.
+  load_lang
   return 0
+}
+
+# Resolves the interface language and sources its catalogue, defining every
+# L_* string. NOTIFY_LANG (conf or environment) wins; otherwise the macOS
+# locale decides, and anything without a catalogue falls back to English.
+load_lang() {
+  local dir want
+  dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+  want="${NOTIFY_LANG:-}"
+  if [ -z "$want" ]; then
+    # AppleLocale is the language the user actually reads; $LANG is often
+    # just C.UTF-8 under a hook and would say nothing.
+    want="$(defaults read -g AppleLocale 2>/dev/null)"
+    [ -z "$want" ] && want="${LC_ALL:-${LC_MESSAGES:-${LANG:-}}}"
+  fi
+  # "pt_BR" -> pt, "en_BR" -> en (region is irrelevant: en_BR reads English).
+  want="$(printf '%s' "$want" | tr '[:upper:]' '[:lower:]')"
+  want="${want%%[_.-]*}"
+
+  [ -f "$dir/lang/$want.sh" ] || want="en"
+  # shellcheck disable=SC1090
+  . "$dir/lang/$want.sh"
+  NOTIFY_LANG_RESOLVED="$want"
+}
+
+# printf into a variable-free string: say <template> [args...]
+say() {
+  local fmt="$1"; shift
+  # shellcheck disable=SC2059  # the template IS the format string here
+  printf "$fmt" "$@"
 }
 
 # Returns 0 when the frontmost app is an editor/terminal — the user is already

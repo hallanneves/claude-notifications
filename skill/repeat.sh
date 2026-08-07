@@ -6,6 +6,10 @@
 set -euo pipefail
 
 DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=notify-lib.sh
+. "$DIR/notify-lib.sh"
+load_notify_conf
+
 PIDFILE="$DIR/.repeat.pids"
 MARKER="claude-notify-repeat"
 
@@ -13,17 +17,17 @@ MARKER="claude-notify-repeat"
 # on a PID without confirming it is still one of ours via the argv marker.
 is_ours() { ps -p "$1" -o command= 2>/dev/null | grep -q "$MARKER"; }
 
-case "${1:?usage: repeat.sh SECONDS MESSAGE [TITLE] | stop | list}" in
+case "${1:?$L_REP_USAGE}" in
   stop)
     if [ -s "$PIDFILE" ]; then
       while read -r pid rest; do
         if is_ours "$pid" && kill "$pid" 2>/dev/null; then
-          echo "stopped reminder pid $pid"
+          say "$L_REP_STOPPED" "$pid"
         fi
       done < "$PIDFILE"
       : > "$PIDFILE"
     else
-      echo "no active reminders"
+      echo "$L_REP_NONE"
     fi
     exit 0
     ;;
@@ -40,21 +44,21 @@ case "${1:?usage: repeat.sh SECONDS MESSAGE [TITLE] | stop | list}" in
       done < "$PIDFILE"
       mv "$TMP" "$PIDFILE"
     fi
-    [ "$ACTIVE" = 1 ] || echo "no active reminders"
+    [ "$ACTIVE" = 1 ] || echo "$L_REP_NONE"
     exit 0
     ;;
 esac
 
 INT="$1"
-MSG="${2:?usage: repeat.sh SECONDS MESSAGE [TITLE]}"
-TITLE="${3:-Lembrete}"
+MSG="${2:?$L_REP_USAGE}"
+TITLE="${3:-$L_REMINDER_TITLE}"
 
 # Reject non-numeric or tiny intervals: a failing/instant sleep would turn the
 # loop into a notification firehose.
 case "$INT" in
-  ''|*[!0-9]*) echo "intervalo inválido: '$INT' (use segundos, inteiro >= 5)"; exit 1 ;;
+  ''|*[!0-9]*) say "$L_REP_BAD_INTERVAL" "$INT"; exit 1 ;;
 esac
-[ "$INT" -ge 5 ] || { echo "intervalo mínimo é 5s (recebi ${INT}s)"; exit 1; }
+[ "$INT" -ge 5 ] || { say "$L_REP_MIN_INTERVAL" "$INT"; exit 1; }
 
 nohup env NOTIFY_BIN="$DIR/notify.sh" NOTIFY_MSG="$MSG" NOTIFY_TITLE="$TITLE" NOTIFY_INT="$INT" \
   bash -c "# $MARKER
@@ -62,4 +66,4 @@ while true; do sleep \"\$NOTIFY_INT\"; \"\$NOTIFY_BIN\" \"\$NOTIFY_MSG\" \"\$NOT
   >/dev/null 2>&1 &
 PID=$!
 echo "$PID every ${INT}s: $MSG" >> "$PIDFILE"
-echo "reminder started: pid $PID, every ${INT}s — stop with: repeat.sh stop"
+say "$L_REP_STARTED" "$PID" "$INT"

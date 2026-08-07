@@ -5,16 +5,21 @@
 set -euo pipefail
 
 cd "$(dirname "$0")"
+# shellcheck source=skill/notify-lib.sh
+. ./skill/notify-lib.sh
+load_notify_conf
 
 if [ "$(uname)" != "Darwin" ]; then
-  echo "❌ Esta skill usa notificações nativas do macOS (osascript) — macOS obrigatório."
+  echo "❌ $L_INS_NEED_MACOS"
   exit 1
 fi
-command -v jq >/dev/null 2>&1 || { echo "❌ jq não encontrado (vem no macOS 15+; senão: brew install jq)"; exit 1; }
+command -v jq >/dev/null 2>&1 || { echo "❌ $L_INS_NEED_JQ"; exit 1; }
 
 DEST="$HOME/.claude/skills/notify"
 mkdir -p "$DEST"
 cp -f skill/SKILL.md skill/notify.conf.example skill/*.sh skill/*.js "$DEST/"
+mkdir -p "$DEST/lang"
+cp -f skill/lang/*.sh "$DEST/lang/"
 # The approval dialog sets this as its NSAlert icon; without it the alert
 # borrows osascript's generic document icon.
 cp -f assets/claude-logo.png "$DEST/claude-logo.png"
@@ -26,8 +31,8 @@ else
   rm -f "$DEST/.source-repo"
 fi
 chmod +x "$DEST"/*.sh
-echo "✅ skill instalada em $DEST"
-echo "   (config opcional: copie $DEST/notify.conf.example para notify.conf e edite)"
+printf '✅ '; say "$L_INS_SKILL_OK" "$DEST"
+say "$L_INS_CONF_HINT" "$DEST/notify.conf.example"
 
 SETTINGS="$HOME/.claude/settings.json"
 [ -f "$SETTINGS" ] || echo '{}' > "$SETTINGS"
@@ -50,28 +55,28 @@ for EV in Notification Stop PermissionRequest; do
       "$SETTINGS" hooks.json > "$tmp"
     jq -e . "$tmp" >/dev/null
     mv "$tmp" "$SETTINGS"
-    echo "✅ hook $EV adicionado em $SETTINGS"
+    printf '✅ '; say "$L_INS_HOOK_ADDED" "$EV" "$SETTINGS"
   elif jq -e --arg ev "$EV" '.hooks[$ev] | tostring | contains("/skills/notify/")' "$SETTINGS" >/dev/null 2>&1; then
-    echo "✅ hook $EV já configurado — nada a fazer"
+    printf '✅ '; say "$L_INS_HOOK_PRESENT" "$EV"
   else
     MANUAL="$MANUAL $EV"
   fi
 done
 if [ -n "$MANUAL" ]; then
-  echo "⚠️  Você já tem hooks seus em:$MANUAL — não vou sobrescrever."
-  echo "    Faça o merge manual desses eventos usando o conteúdo de hooks.json."
+  printf '⚠️  '; say "$L_INS_HOOK_MANUAL" "$MANUAL"
+  echo "$L_INS_HOOK_MANUAL2"
 fi
-[ -n "$BACKUP" ] && echo "   (backup do settings.json em $BACKUP)"
+[ -n "$BACKUP" ] && say "$L_INS_BACKUP" "$BACKUP"
 
 if command -v terminal-notifier >/dev/null 2>&1; then
-  ./install-notifier-app.sh || echo "⚠️  não consegui criar o app de notificação (rode ./install-notifier-app.sh depois)"
+  ./install-notifier-app.sh || echo "⚠️  $L_INS_APP_FAIL"
 else
-  echo "ℹ️  Recomendado: brew install terminal-notifier && ./install-notifier-app.sh"
-  echo "   (sem ele o fallback é o osascript: o banner sai em nome do Script Editor)"
+  echo "ℹ️  $L_INS_TN_HINT"
+  echo "$L_INS_TN_HINT2"
 fi
 
 echo
-echo "🔔 Teste agora:  $DEST/notify.sh --done \"Instalação concluída\""
-echo "➡️  Reinicie o Claude Code (ou abra /hooks) para os hooks carregarem."
-echo "➡️  Se o banner não aparecer: Ajustes do Sistema → Notificações → permitir o app"
-echo "   (\"Claude Code\", ou \"Script Editor\" quando estiver no fallback)."
+printf '🔔 '; say "$L_INS_TEST" "$DEST"
+echo "➡️  $L_INS_RESTART"
+echo "➡️  $L_INS_NO_BANNER"
+echo "$L_INS_NO_BANNER2"

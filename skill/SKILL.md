@@ -17,6 +17,14 @@ Scripts neste diretório (`~/.claude/skills/notify/`):
 - `notify-hook.sh` / `stop-hook.sh` / `approval-hook.sh` — adaptadores de hook (Notification /
   Stop / PermissionRequest), ligados em `~/.claude/settings.json`. Não são chamados pela skill.
 
+## Idioma
+
+Todas as strings de interface vêm de `lang/en.sh` e `lang/pt.sh`, escolhidos pelo locale do
+macOS ou por `NOTIFY_LANG` no `notify.conf`. **Ao adicionar qualquer texto novo visível ao
+usuário, crie a chave `L_*` nos dois catálogos** — os testes falham se uma faltar, mas em
+produção a string sairia vazia sem erro nenhum. As mensagens que VOCÊ compõe (o conteúdo do
+`/notify`) seguem o idioma da conversa, não o catálogo.
+
 ## Identidade visual e sonora (SEMPRE respeitar)
 
 - **SEM emojis** em títulos e mensagens de notificação — preferência explícita do Hallan.

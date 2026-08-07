@@ -21,10 +21,10 @@ SUBTITLE="${3:-}"
 SOUND="${4:-}"
 
 case "$TYPE" in
-  approval) : "${TITLE:=Aprovação necessária}"; : "${SOUND:=Submarine}" ;;
-  done)     : "${TITLE:=Trabalho concluído}";   : "${SOUND:=Hero}" ;;
-  fail)     : "${TITLE:=Algo falhou}";          : "${SOUND:=Basso}" ;;
-  info)     : "${TITLE:=Claude Code}";          : "${SOUND:=Glass}" ;;
+  approval) : "${TITLE:=$L_TITLE_APPROVAL}"; : "${SOUND:=Submarine}" ;;
+  done)     : "${TITLE:=$L_TITLE_DONE}";     : "${SOUND:=Hero}" ;;
+  fail)     : "${TITLE:=$L_TITLE_FAIL}";     : "${SOUND:=Basso}" ;;
+  info)     : "${TITLE:=$L_TITLE_INFO}";     : "${SOUND:=Glass}" ;;
 esac
 
 # An unknown sound name plays nothing, with no error from any notifier — warn
@@ -33,7 +33,7 @@ if [ -n "$SOUND" ] && [ "$SOUND" != "default" ] \
   && [ ! -f "/System/Library/Sounds/$SOUND.aiff" ] \
   && [ ! -f "/Library/Sounds/$SOUND.aiff" ] \
   && [ ! -f "$HOME/Library/Sounds/$SOUND.aiff" ]; then
-  echo "aviso: som '$SOUND' não existe (veja: ls /System/Library/Sounds) — o banner sai mudo" >&2
+  say "$L_WARN_SOUND" "$SOUND" >&2
 fi
 
 # Prefer the dedicated copy of the terminal-notifier bundle when one exists:

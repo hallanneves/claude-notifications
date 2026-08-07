@@ -1,8 +1,8 @@
 #!/bin/bash
 # PermissionRequest-hook adapter: when Claude Code is about to show a permission
 # prompt and you are AWAY from the editor/terminal, pops a native macOS dialog
-# with Aprovar / Abrir no editor / Negar buttons and returns the decision.
-# Fail-safe by design: any parse error, timeout, or "Abrir no editor" exits 0
+# with Approve / Open in editor / Deny buttons and returns the decision.
+# Fail-safe by design: any parse error, timeout, or "open in editor" exits 0
 # with no output, which makes Claude Code show the normal interactive prompt.
 # NOTIFY_FORCE=1 bypasses the frontmost-app gate (used for testing).
 set -uo pipefail
@@ -17,7 +17,7 @@ INPUT="$(cat)"
 front_is_editor && exit 0
 
 TOOL="$(printf '%s' "$INPUT" | jq -r '.tool_name // empty' 2>/dev/null)"
-[ -n "$TOOL" ] || TOOL="ferramenta"
+[ -n "$TOOL" ] || TOOL="$L_TOOL_FALLBACK"
 
 # Interaction tools address the user directly — an approval dialog on top of
 # them is nonsense (denying your own question). Let the normal UI handle them.
@@ -32,24 +32,25 @@ case "$RAW" in null|'{}') RAW="" ;; esac
 # shellcheck disable=SC1003  # tr '\\' é um escape de tr, não de aspas
 DETAIL="$(printf '%s' "$RAW" | head -c 350 | tr '\n' ' ' | tr '"' "'" | tr '\\' '/')"
 # Never hide the tail of a long command silently from the approver.
-[ "${#RAW}" -gt 350 ] && DETAIL="$DETAIL [TRUNCADO — use Abrir no editor para ver o comando completo]"
+[ "${#RAW}" -gt 350 ] && DETAIL="$DETAIL $L_TRUNCATED"
 
-PROMPT="Claude quer usar: $TOOL"
+PROMPT="$(say "$L_APPROVAL_PROMPT" "$TOOL")"
 [ -n "$DETAIL" ] && PROMPT="$PROMPT — $DETAIL"
 
 # Banner + sound so the dialog is never missed even off-screen
-"$DIR/notify.sh" --approval "$TOOL: ${DETAIL:-sem detalhes}" >/dev/null 2>&1 || true
+"$DIR/notify.sh" --approval "$TOOL: ${DETAIL:-$L_NO_DETAILS}" >/dev/null 2>&1 || true
 
-RES="$(run_dialog "Claude Code — aprovação" "$PROMPT" "$DIR/claude-logo.png" \
-  "Aprovar:a:approve|Negar:n:deny|Abrir no editor:e:editor|Fechar (Esc):esc:ignore" \
-  "${NOTIFY_DIALOG_TIMEOUT:-50}")"
+RES="$(run_dialog "$L_APPROVAL_TITLE" "$PROMPT" "$DIR/claude-logo.png" \
+  "$L_APPROVAL_BUTTONS" "${NOTIFY_DIALOG_TIMEOUT:-50}")"
 
 case "$RES" in
   approve)
     printf '%s' "$INPUT" | jq -c '{hookSpecificOutput:{hookEventName:"PermissionRequest",decision:{behavior:"allow",updatedInput:(.tool_input // {})}}}'
     ;;
   deny)
-    printf '{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"deny","message":"Negado por %s via dialog de notificação"}}}' "${USER:-usuário}"
+    # jq builds it so the reason survives quotes or anything else in the name.
+    jq -cn --arg reason "$(say "$L_DENY_MESSAGE" "${USER:-$L_USER_FALLBACK}")" \
+      '{hookSpecificOutput:{hookEventName:"PermissionRequest",decision:{behavior:"deny",message:$reason}}}'
     ;;
   editor)
     open -b "${NOTIFY_ACTIVATE:-$NOTIFY_ACTIVATE_DEFAULT}" 2>/dev/null || true

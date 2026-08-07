@@ -3,6 +3,29 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.3.0] — 2026-08-07
+
+### Added
+- The interface speaks English and Portuguese. Every user-facing string — banner titles,
+  dialog buttons, hook messages, installer and uninstaller output, CLI errors — moved into
+  per-language catalogues under `skill/lang/`, and the language is picked from the macOS
+  locale (`AppleLocale`), overridable with `NOTIFY_LANG` in `notify.conf` or the environment.
+  Anything without a catalogue falls back to English.
+- Mnemonics are translated along with the labels, so the approval dialog reads
+  **A**pprove / **D**eny / open in **e**ditor in English and
+  **A**provar / **N**egar / abrir no **e**ditor in Portuguese — each shortcut is the initial
+  of the word actually on the button.
+- Two guard tests: the catalogues must define exactly the same keys, and every `$L_*`
+  referenced by a script must exist in both. A missing key would otherwise render as an
+  empty string with no error at all.
+
+### Changed
+- Region no longer decides the language: `en_BR` resolves to English, `pt_BR` to Portuguese.
+- The deny reason is now built with `jq` instead of `printf`, so a username containing a
+  quote cannot corrupt the hook's JSON response.
+- `update.sh` reloads the catalogue after installing, so the closing banner speaks the
+  language shipped by the new version rather than the one that started the update.
+
 ## [1.2.1] — 2026-08-07
 
 ### Fixed

@@ -2,6 +2,12 @@
 # Para ativar: copie este arquivo para ~/.claude/skills/notify/notify.conf e edite.
 # Sintaxe de shell (é carregado com `source` pelos scripts).
 
+# Idioma da interface: "en" ou "pt". Sem isto, o idioma vem do locale do macOS
+# (Ajustes → Idioma e Região) e cai no inglês quando não há catálogo.
+# Interface language: "en" or "pt". Without this, it follows the macOS locale
+# and falls back to English when there is no catalogue.
+#NOTIFY_LANG="pt"
+
 # Bundle id do app focado ao clicar numa notificação (padrão: VSCode).
 # Descubra o do seu editor com: osascript -e 'id of app "NomeDoApp"'
 #NOTIFY_ACTIVATE="com.todesktop.230313mzl4w4u92"   # exemplo: Cursor

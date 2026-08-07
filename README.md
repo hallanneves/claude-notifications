@@ -4,6 +4,10 @@
 
 *English version: [README.en.md](README.en.md)*
 
+> **Idioma**: a interface fala **português e inglês**. O idioma vem do locale do macOS
+> (Ajustes → Idioma e Região) e você força com `NOTIFY_LANG="pt"` ou `"en"` no `notify.conf`.
+> Os exemplos deste README mostram os textos em português.
+
 Notificações nativas do macOS (estilo Slack) para o **Claude Code**: uma skill `/notify` +
 três hooks que avisam com **banner com o ícone do Claude e um som próprio para cada tipo de
 evento** — inclusive um **dialog com botão de Aprovar/Negar** quando o Claude precisa de
@@ -173,7 +177,8 @@ claude-notifications/
 │   └── claude-logo.svg     # fonte vetorial do ícone
 ├── skill/
 │   ├── SKILL.md            # instruções que o Claude Code carrega (/notify)
-│   ├── notify-lib.sh       # constantes + helpers compartilhados (bundle, gate de foreground)
+│   ├── lang/               # catálogos de strings (en.sh, pt.sh)
+│   ├── notify-lib.sh       # constantes + helpers compartilhados (bundle, foreground, idioma)
 │   ├── notify.sh           # banner nativo (terminal-notifier ou osascript)
 │   ├── repeat.sh           # lembretes periódicos detached (start/list/stop)
 │   ├── notify.conf.example # config opcional (app do clique, apps que suprimem)
@@ -222,6 +227,9 @@ detalhes que só aparecem quando se tenta:
 Crie `~/.claude/skills/notify/notify.conf` (há um `notify.conf.example` instalado junto):
 
 ```bash
+# Idioma da interface: "en" ou "pt". Sem isto, segue o locale do macOS.
+NOTIFY_LANG="pt"
+
 # App focado ao clicar na notificação (padrão: VSCode).
 # Descubra o bundle id do seu editor: osascript -e 'id of app "Cursor"'
 NOTIFY_ACTIVATE="com.todesktop.230313mzl4w4u92"

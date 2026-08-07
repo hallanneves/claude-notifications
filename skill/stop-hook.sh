@@ -21,4 +21,7 @@ front_is_editor && exit 0
 
 PROJ="$(printf '%s' "$INPUT" | jq -r '.cwd // empty' 2>/dev/null)"
 PROJ="${PROJ##*/}"
-exec "$DIR/notify.sh" --done "Terminei${PROJ:+ em $PROJ} — pode conferir" "" "${PROJ:+projeto $PROJ}"
+if [ -n "$PROJ" ]; then
+  exec "$DIR/notify.sh" --done "$(say "$L_STOP_DONE_IN" "$PROJ")" "" "$(say "$L_STOP_SUBTITLE" "$PROJ")"
+fi
+exec "$DIR/notify.sh" --done "$L_STOP_DONE"

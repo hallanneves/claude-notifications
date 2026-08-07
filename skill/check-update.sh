@@ -39,7 +39,7 @@ case "$LOCAL" in '') LOCAL="0.0.0" ;; esac
 # ls-remote needs no clone, no auth and no JSON parsing.
 TAGS="$(git ls-remote --tags --refs "$NOTIFY_UPDATE_REPO" 2>/dev/null)"
 if [ -z "$TAGS" ]; then
-  [ "$FORCE" = 1 ] && echo "não consegui consultar $NOTIFY_UPDATE_REPO (offline? repo privado?)"
+  [ "$FORCE" = 1 ] && say "$L_UPD_UNREACHABLE" "$NOTIFY_UPDATE_REPO"
   exit 0
 fi
 
@@ -47,7 +47,7 @@ fi
 REMOTE="$(printf '%s\n' "$TAGS" \
   | sed -nE 's|.*refs/tags/v?([0-9]+(\.[0-9]+){1,2})$|\1|p' | sort -V | tail -1)"
 if [ -z "$REMOTE" ]; then
-  [ "$FORCE" = 1 ] && echo "nenhuma tag de versão em $NOTIFY_UPDATE_REPO"
+  [ "$FORCE" = 1 ] && say "$L_UPD_NO_TAGS" "$NOTIFY_UPDATE_REPO"
   exit 0
 fi
 
@@ -55,12 +55,12 @@ fi
 # (or an equal one) is not an update.
 NEWEST="$(printf '%s\n%s\n' "$LOCAL" "$REMOTE" | sort -V | tail -1)"
 if [ "$LOCAL" = "$REMOTE" ] || [ "$NEWEST" != "$REMOTE" ]; then
-  [ "$FORCE" = 1 ] && echo "já está atualizado (local $LOCAL, remoto $REMOTE)"
+  [ "$FORCE" = 1 ] && say "$L_UPD_CURRENT" "$LOCAL" "$REMOTE"
   exit 0
 fi
 
-echo "atualização disponível: $LOCAL -> $REMOTE"
+say "$L_UPD_AVAILABLE" "$LOCAL" "$REMOTE"
 # Quoted so a $HOME with spaces still resolves to one argument.
 NOTIFY_EXECUTE="'$DIR/update.sh'" \
-  "$DIR/notify.sh" "Clique para atualizar da $LOCAL para a $REMOTE" \
-  "Atualização disponível" "claude-notifications $REMOTE"
+  "$DIR/notify.sh" "$(say "$L_UPD_BANNER_MSG" "$LOCAL" "$REMOTE")" \
+  "$L_UPD_BANNER_TITLE" "$(say "$L_UPD_BANNER_SUB" "$REMOTE")"

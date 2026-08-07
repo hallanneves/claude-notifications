@@ -182,7 +182,7 @@ claude-notifications/
 │   ├── notify-lib.sh       # shared constants + helpers (bundles, foreground gate, language)
 │   ├── notify.sh           # native banner (terminal-notifier or osascript)
 │   ├── repeat.sh           # detached periodic reminders (start/list/stop)
-│   ├── notify.conf.example # optional config (click target, suppressing apps)
+│   ├── notify.conf.example # optional config (language, click target, timeouts, update)
 │   ├── notify-hook.sh      # Notification hook → routes by notification_type
 │   ├── stop-hook.sh        # Stop hook → "done" banner (suppressed with editor focused)
 │   ├── approval-hook.sh    # PermissionRequest hook → Approve/Deny dialog
@@ -279,13 +279,24 @@ taken first). If you had applied the icon to Homebrew's shared terminal-notifier
 
 ```bash
 brew install shellcheck bats-core
-shellcheck -x -P SCRIPTDIR -S style install.sh uninstall.sh install-notifier-app.sh set-claude-icon.sh skill/*.sh
+shellcheck -x -P SCRIPTDIR -S style install.sh uninstall.sh install-notifier-app.sh set-claude-icon.sh skill/*.sh skill/lang/*.sh
 bats tests
 ```
 
 The same pair runs in CI (GitHub Actions): shellcheck on Ubuntu, bats on a macOS runner. The
 tests use a throwaway `HOME` and stubs for `terminal-notifier`/`osascript`/`lsappinfo` — no
 test fires a real notification or touches your `settings.json`.
+
+### Adding a language
+
+Copy `skill/lang/en.sh` to `skill/lang/<code>.sh` (the two-letter language code, e.g. `es` or
+`fr`), translate the values, and that is it — no script changes, and anyone whose macOS is set
+to that language is served automatically. Two tests guard the rest: the catalogues must define
+exactly the same keys, and every `$L_*` used by a script must exist in all of them. That
+matters because a missing key raises **no** error — the string simply comes out empty.
+
+When translating buttons, keep the shortcut as the initial of the translated word (the format
+is `Label:key:token`); that is what keeps the underlined letter and the key in agreement.
 
 ## License
 

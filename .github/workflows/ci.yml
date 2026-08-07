@@ -21,7 +21,9 @@ jobs:
           sudo install "shellcheck-${SHELLCHECK_VERSION}/shellcheck" /usr/local/bin/shellcheck
           shellcheck --version
       - name: shellcheck
-        run: shellcheck -x -P SCRIPTDIR -S style install.sh uninstall.sh install-notifier-app.sh set-claude-icon.sh skill/*.sh
+        # skill/lang/*.sh included: a syntax error in a catalogue breaks every
+        # script that sources it, and would otherwise sail through green.
+        run: shellcheck -x -P SCRIPTDIR -S style install.sh uninstall.sh install-notifier-app.sh set-claude-icon.sh skill/*.sh skill/lang/*.sh
 
   tests:
     runs-on: macos-latest

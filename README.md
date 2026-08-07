@@ -181,7 +181,7 @@ claude-notifications/
 │   ├── notify-lib.sh       # constantes + helpers compartilhados (bundle, foreground, idioma)
 │   ├── notify.sh           # banner nativo (terminal-notifier ou osascript)
 │   ├── repeat.sh           # lembretes periódicos detached (start/list/stop)
-│   ├── notify.conf.example # config opcional (app do clique, apps que suprimem)
+│   ├── notify.conf.example # config opcional (idioma, app do clique, timeouts, update)
 │   ├── notify-hook.sh      # hook Notification → roteia por notification_type
 │   ├── stop-hook.sh        # hook Stop → banner "pronto" (suprimido c/ editor em foco)
 │   ├── approval-hook.sh    # hook PermissionRequest → dialog Aprovar/Negar
@@ -243,6 +243,13 @@ NOTIFY_TN="$HOME/Applications/Claude Code Notifier.app/Contents/MacOS/terminal-n
 
 # Segundos que o dialog de aprovação espera antes de desistir (padrão: 50).
 NOTIFY_DIALOG_TIMEOUT=50
+
+# Checagem de versão nova (banner clicável). 0 desliga.
+NOTIFY_UPDATE_CHECK=0
+# Intervalo mínimo entre checagens, em segundos (padrão: 86400 = 1 dia).
+NOTIFY_UPDATE_INTERVAL=86400
+# Repositório consultado — troque para acompanhar um fork.
+NOTIFY_UPDATE_REPO="https://github.com/hallanneves/claude-notifications.git"
 ```
 
 Outros ajustes:
@@ -270,13 +277,24 @@ tinha aplicado o ícone no terminal-notifier compartilhado do Homebrew:
 
 ```bash
 brew install shellcheck bats-core
-shellcheck -x -P SCRIPTDIR -S style install.sh uninstall.sh install-notifier-app.sh set-claude-icon.sh skill/*.sh
+shellcheck -x -P SCRIPTDIR -S style install.sh uninstall.sh install-notifier-app.sh set-claude-icon.sh skill/*.sh skill/lang/*.sh
 bats tests
 ```
 
 A mesma dupla roda no CI (GitHub Actions): shellcheck no Ubuntu, bats num runner macOS. Os
 testes usam `HOME` descartável e stubs de `terminal-notifier`/`osascript`/`lsappinfo` — nenhum
 teste dispara notificação real nem toca no seu `settings.json`.
+
+### Adicionar um idioma
+
+Copie `skill/lang/en.sh` para `skill/lang/<código>.sh` (o código de duas letras, como `es`
+ou `fr`), traduza os valores e pronto — nenhum script muda, e quem tiver o macOS nesse idioma
+passa a ser atendido automaticamente. Dois testes protegem o resto: os catálogos precisam ter
+exatamente as mesmas chaves, e todo `$L_*` usado nos scripts precisa existir em todos eles.
+Isso importa porque uma chave faltando **não** gera erro — a string simplesmente sai vazia.
+
+Ao traduzir os botões, mantenha o atalho como a inicial da palavra traduzida (o formato é
+`Rótulo:tecla:token`), que é o que faz a letra sublinhada bater com a tecla.
 
 ## Licença
 

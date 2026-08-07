@@ -51,7 +51,7 @@ L_UPD_BANNER_SUB="claude-notifications %s"
 # update.sh
 L_UPD_NO_GIT="git not found — cannot update"
 L_UPD_DIALOG_TITLE="claude-notifications update"
-L_UPD_DIALOG_BODY="You are on version %s. Install the latest from %s? Read what changed first if you prefer."
+L_UPD_DIALOG_BODY="You are on version %s. Install %s from %s? Read what changed first if you prefer."
 L_UPD_DIALOG_BUTTONS="Install:i:install|View on GitHub:g:github|Cancel (Esc):esc:cancel"
 L_UPD_OPENED="opened %s — run again when you want to install\n"
 L_UPD_CANCELLED="update cancelled"

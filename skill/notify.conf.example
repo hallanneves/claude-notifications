@@ -26,6 +26,19 @@
 # prompt normal do terminal (padrão: 50).
 #NOTIFY_DIALOG_TIMEOUT=50
 
+# O que o BANNER de aprovação mostra: "tool" (padrão, só o nome da ferramenta)
+# ou "full" (inclui o comando). O macOS mostra prévias na tela de bloqueio, e um
+# comando pode conter token/senha — a janela sempre mostra o comando completo,
+# e ela exige sessão desbloqueada.
+# What the approval BANNER shows: "tool" (default) or "full" (includes the
+# command). macOS previews notifications on the lock screen.
+#NOTIFY_BANNER_DETAIL=full
+
+# Registra uma linha por chamada de hook em .debug.log (todo caminho de erro
+# sai em silêncio por design, então é assim que se enxerga o que houve).
+# Logs one line per hook call to .debug.log.
+#NOTIFY_DEBUG=1
+
 # Checagem de versão nova (banner clicável que atualiza). 0 desliga.
 #NOTIFY_UPDATE_CHECK=0
 # Intervalo mínimo entre checagens, em segundos (padrão: 86400 = 1 dia).

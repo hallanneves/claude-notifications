@@ -3,6 +3,41 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.4.0] — 2026-08-07
+
+### Fixed
+- One permission request produced **two banners and two sonar sounds**: it raises both
+  `Notification` (with `notification_type: permission_prompt`) and `PermissionRequest`, and
+  both hooks were posting. The Notification hook now stays silent on that event when the
+  PermissionRequest hook is wired — checked in `settings.json`, so a setup with only the
+  Notification hook keeps its banner.
+- `update.sh` advertised a tag and installed a branch: it compared against the newest tag but
+  then ran `git pull` on the default branch, delivering whatever unreleased commits happened
+  to be on it. It now clones the exact tag it advertised (`--branch <tag>`) into a throwaway
+  directory. Your own working copy is never touched, which also retires the whole
+  "fast-forward failed because you have local commits" failure mode.
+
+### Added
+- The approval **banner no longer carries the command** by default. macOS previews
+  notifications on the lock screen, so a `Bash` call holding a token or password was readable
+  on a locked machine. The banner now names the tool; the full command stays in the dialog,
+  which requires an unlocked session. `NOTIFY_BANNER_DETAIL=full` restores the old banner.
+- `NOTIFY_DEBUG=1` appends one line per hook call to `.debug.log`. Every error path exits 0 in
+  silence by design — right for safety, unhelpful for support — and this is the way to see
+  what actually happened.
+- `dialog.js` is now syntax-checked in the suite with `osacompile`, which parses it without
+  opening a window. The tests stub `osascript`, so nothing else ever executed that file: a
+  syntax error would have passed CI and shown up only as "the approval dialog stopped
+  appearing", silently, because a broken dialog lands on the fail-safe path.
+- The skill's trigger description is bilingual and its body is in English. The `description`
+  is what Claude Code matches a request against, and it listed Portuguese phrases only — so
+  "notify me when the build finishes" was being matched against Portuguese text.
+
+### Changed
+- CI also lints `tests/helpers.bash`.
+- `.update.log` and `.debug.log` are trimmed to their tail past 64 KB instead of growing
+  forever.
+
 ## [1.3.0] — 2026-08-07
 
 ### Added

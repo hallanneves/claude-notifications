@@ -51,7 +51,7 @@ L_UPD_BANNER_SUB="claude-notifications %s"
 # update.sh
 L_UPD_NO_GIT="git não encontrado — não dá para atualizar"
 L_UPD_DIALOG_TITLE="Atualização do claude-notifications"
-L_UPD_DIALOG_BODY="Você tem a versão %s. Instalar a mais recente de %s? Veja o que mudou antes, se preferir."
+L_UPD_DIALOG_BODY="Você tem a versão %s. Instalar a %s de %s? Veja o que mudou antes, se preferir."
 L_UPD_DIALOG_BUTTONS="Instalar:i:install|Ver no GitHub:g:github|Cancelar (Esc):esc:cancel"
 L_UPD_OPENED="abri %s — rode de novo quando quiser instalar\n"
 L_UPD_CANCELLED="atualização cancelada"

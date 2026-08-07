@@ -116,18 +116,25 @@ teardown() { common_teardown; }
 setup_update_dialog() {
   stub_osascript
   stub_open
-  # Um "clone de origem" cujo install.sh apenas registra que rodou.
-  mkdir -p "$WORK/src/.git"
-  cat > "$WORK/src/install.sh" <<EOF
+  # git stub: anuncia a tag v9.9.9 e, no clone, materializa um repo cujo
+  # install.sh so registra que rodou.
+  cat > "$STUB/git" <<EOF
 #!/bin/bash
-echo "instalador rodou" >> "$WORK/installer.calls"
-echo "9.9.9" > "$WORK/skill/VERSION"
-EOF
-  chmod +x "$WORK/src/install.sh"
-  printf '%s' "$WORK/src" > "$WORK/skill/.source-repo"
-  # git nao deve ser chamado no caminho de dialogo; se for, o pull falha cedo.
-  cat > "$STUB/git" <<'EOF'
+printf '%s\n' "\$@" >> "$WORK/git.calls"
+case "\$1" in
+  ls-remote) echo "abc123	refs/tags/v9.9.9" ;;
+  clone)
+    dest="\${@: -1}"
+    mkdir -p "\$dest"
+    cat > "\$dest/install.sh" <<'INNER'
 #!/bin/bash
+echo "instalador rodou" >> "REPLACE_CALLS"
+echo "9.9.9" > "REPLACE_VERSION"
+INNER
+    sed -i '' "s|REPLACE_CALLS|$WORK/installer.calls|; s|REPLACE_VERSION|$WORK/skill/VERSION|" "\$dest/install.sh"
+    chmod +x "\$dest/install.sh"
+    ;;
+esac
 exit 0
 EOF
   chmod +x "$STUB/git"
@@ -182,11 +189,14 @@ EOF
   [[ "$calls" == *"Cancelar (Esc):esc:cancel"* ]]
 }
 
-@test "update: pull que falha vira notificacao de falha, sem instalar" {
+@test "update: clone que falha vira notificacao de falha, sem instalar" {
   setup_update_dialog
   cat > "$STUB/git" <<'EOF'
 #!/bin/bash
-[ "$1" = "-C" ] && exit 1
+case "$1" in
+  ls-remote) echo "abc123	refs/tags/v9.9.9"; exit 0 ;;
+  clone) exit 1 ;;
+esac
 exit 0
 EOF
   chmod +x "$STUB/git"
@@ -194,4 +204,28 @@ EOF
   [ "$status" -eq 1 ]
   [ ! -f "$WORK/installer.calls" ]
   [[ "$(cat "$WORK/notify.calls")" == *--fail* ]]
+}
+
+@test "update: instala a TAG anunciada, nunca o branch" {
+  setup_update_dialog
+  OSA_RESULT="install" run "$WORK/skill/update.sh"
+  [ "$status" -eq 0 ]
+  calls="$(cat "$WORK/git.calls")"
+  # --branch v9.9.9 e o que garante que a entrega bate com o anuncio.
+  [[ "$calls" == *"--branch"* ]]
+  [[ "$calls" == *"v9.9.9"* ]]
+  # E nada de pull: o clone de trabalho do usuario nao e tocado.
+  [[ "$calls" != *"pull"* ]]
+}
+
+@test "update: sem tag no remoto, falha em vez de instalar qualquer coisa" {
+  setup_update_dialog
+  cat > "$STUB/git" <<'EOF'
+#!/bin/bash
+exit 0
+EOF
+  chmod +x "$STUB/git"
+  OSA_RESULT="install" run "$WORK/skill/update.sh"
+  [ "$status" -eq 1 ]
+  [ ! -f "$WORK/installer.calls" ]
 }

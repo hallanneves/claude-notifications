@@ -51,6 +51,32 @@ load_lang() {
   NOTIFY_LANG_RESOLVED="$want"
 }
 
+# Keeps an append-only log from growing forever: past the cap, only the tail
+# is worth reading anyway.
+rotate_log() {
+  local file="$1" max="${2:-65536}" size
+  [ -f "$file" ] || return 0
+  size="$(wc -c < "$file" 2>/dev/null | tr -d ' ')"
+  case "$size" in ''|*[!0-9]*) return 0 ;; esac
+  if [ "$size" -gt "$max" ]; then
+    tail -c "$((max / 2))" "$file" > "$file.tmp" 2>/dev/null && mv "$file.tmp" "$file"
+  fi
+  return 0
+}
+
+# Every hook exits 0 in silence by design, which is right for safety and
+# terrible for support. NOTIFY_DEBUG=1 leaves a trail without changing any
+# behaviour: one line per call, appended to .debug.log next to the skill.
+debug_log() {
+  [ "${NOTIFY_DEBUG:-0}" = "1" ] || return 0
+  local dir file
+  dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  file="$dir/.debug.log"
+  rotate_log "$file"
+  printf '%s [%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "${1:-?}" "${2:-}" >> "$file"
+  return 0
+}
+
 # printf into a variable-free string: say <template> [args...]
 say() {
   local fmt="$1"; shift

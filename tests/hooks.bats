@@ -108,6 +108,35 @@ approval() { "$WORK/skill/approval-hook.sh"; }
   [[ "$(cat "$WORK/osascript.calls")" == *"[TRUNCADO"* ]]
 }
 
+@test "approval: por padrao o banner NAO carrega o comando (tela de bloqueio)" {
+  export NOTIFY_FORCE=1 OSA_RESULT="ignore"
+  run bash -c 'echo "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"export TOKEN=segredo123\"}}" | "$0"' "$WORK/skill/approval-hook.sh"
+  [ "$status" -eq 0 ]
+  banner="$(cat "$WORK/notify.calls")"
+  [[ "$banner" != *segredo123* ]]
+  [[ "$banner" == *Bash* ]]
+  # O comando continua na janela, que exige sessao desbloqueada.
+  [[ "$(cat "$WORK/osascript.calls")" == *segredo123* ]]
+}
+
+@test "approval: NOTIFY_BANNER_DETAIL=full devolve o comando ao banner" {
+  export NOTIFY_FORCE=1 OSA_RESULT="ignore" NOTIFY_BANNER_DETAIL=full
+  run bash -c 'echo "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"export TOKEN=segredo123\"}}" | "$0"' "$WORK/skill/approval-hook.sh"
+  [ "$status" -eq 0 ]
+  [[ "$(cat "$WORK/notify.calls")" == *segredo123* ]]
+}
+
+@test "debug: NOTIFY_DEBUG=1 registra a decisao, e o padrao nao escreve nada" {
+  export NOTIFY_FORCE=1 OSA_RESULT="deny"
+  run bash -c 'echo "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"ls\"}}" | "$0"' "$WORK/skill/approval-hook.sh"
+  [ ! -f "$WORK/skill/.debug.log" ]
+
+  export NOTIFY_DEBUG=1
+  run bash -c 'echo "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"ls\"}}" | "$0"' "$WORK/skill/approval-hook.sh"
+  [ -f "$WORK/skill/.debug.log" ]
+  [[ "$(cat "$WORK/skill/.debug.log")" == *"decision=deny"* ]]
+}
+
 @test "approval: dialog recebe o script e o icone do Claude" {
   export NOTIFY_FORCE=1 OSA_RESULT="ignore"
   run bash -c 'echo "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"ls\"}}" | "$0"' "$WORK/skill/approval-hook.sh"
@@ -137,6 +166,26 @@ approval() { "$WORK/skill/approval-hook.sh"; }
 }
 
 # ---- notify-hook -------------------------------------------------------------
+
+@test "notify-hook: permission_prompt cala quando o approval-hook esta ligado" {
+  # Os dois eventos nascem do mesmo pedido: se ambos notificarem, sao dois
+  # banners e dois sonares para uma unica permissao.
+  mkdir -p "$HOME/.claude"
+  echo '{"hooks":{"PermissionRequest":[{"hooks":[{"type":"command","command":"~/.claude/skills/notify/approval-hook.sh"}]}]}}' \
+    > "$HOME/.claude/settings.json"
+  run bash -c 'echo "{\"notification_type\":\"permission_prompt\",\"message\":\"precisa de permissão\"}" | "$0"' "$WORK/skill/notify-hook.sh"
+  [ "$status" -eq 0 ]
+  [ ! -f "$WORK/notify.calls" ]
+}
+
+@test "notify-hook: permission_prompt notifica quando o approval-hook NAO esta ligado" {
+  mkdir -p "$HOME/.claude"
+  echo '{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"outra-coisa.sh"}]}]}}' \
+    > "$HOME/.claude/settings.json"
+  run bash -c 'echo "{\"notification_type\":\"permission_prompt\",\"message\":\"precisa de permissão\"}" | "$0"' "$WORK/skill/notify-hook.sh"
+  [ "$status" -eq 0 ]
+  [[ "$(cat "$WORK/notify.calls")" == *--approval* ]]
+}
 
 @test "notify-hook: permission_prompt vira --approval" {
   run bash -c 'echo "{\"notification_type\":\"permission_prompt\",\"message\":\"Claude precisa de permissão\"}" | "$0"' "$WORK/skill/notify-hook.sh"

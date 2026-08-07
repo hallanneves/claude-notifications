@@ -49,6 +49,10 @@ Comportamentos inteligentes:
   navegador? Ele dispara.
 - **Clique útil**: clicar em qualquer notificação foca o VSCode (configurável via
   `NOTIFY_ACTIVATE=<bundle-id>`).
+- **Nada de segredo na tela de bloqueio**: o banner de aprovação diz só qual ferramenta o
+  Claude quer usar. O comando completo fica na janela, que exige sessão desbloqueada — o
+  macOS mostra prévia de notificação com a tela travada. `NOTIFY_BANNER_DETAIL=full` volta ao
+  comportamento antigo.
 - **Lembretes periódicos**: `repeat.sh` roda detached e sobrevive ao fim da sessão.
 - **Aviso de versão nova**: uma vez por dia, o fim de turno checa se há uma tag mais recente
   no repositório. Se houver, chega um banner **clicável** que abre uma janela com
@@ -156,11 +160,11 @@ ligado ao `Esc`. Esse desvio é proposital: é software livre rodando um instala
 máquina, então ler o diff antes tem que ser um clique, não uma escavação. `update.sh --yes`
 pula a janela para quem quer automatizar.
 
-Ao instalar, ele dá `git pull --ff-only` no clone de origem (registrado na instalação) e
-reinstala; se o clone sumiu, clona o repositório canônico num diretório temporário. Nada é
-forçado: um clone com commits locais ou mudanças não commitadas faz o fast-forward falhar, e
-você recebe um banner de falha em vez de ter o histórico reescrito. Depois de atualizar,
-**reinicie o Claude Code** para os hooks recarregarem.
+Ao instalar, ele clona **exatamente a tag anunciada** (`--branch`) num diretório temporário e
+roda o instalador de lá. Seu clone de trabalho nunca é tocado: puxar um branch entregaria
+commits ainda não lançados, e dar checkout numa tag dentro do repositório onde você trabalha
+te deixaria em detached HEAD. Depois de atualizar, **reinicie o Claude Code** para os hooks
+recarregarem.
 
 ## Como funciona
 
@@ -200,7 +204,11 @@ Notas de segurança do design:
   hooks e nunca sobrescreve hooks de outras ferramentas; o `uninstall.sh` remove **apenas** as
   entradas de hook que apontam para a skill, preservando qualquer outra intacta.
 - O hook `Notification` roteia pelo campo `notification_type` do Claude Code (permissão,
-  espera, agente concluído…), com fallback por palavra-chave para versões antigas.
+  espera, agente concluído…), com fallback por palavra-chave para versões antigas. Ele fica
+  **calado** em `permission_prompt` quando o hook de `PermissionRequest` está ligado: o mesmo
+  pedido dispara os dois eventos, e sem isso você ouviria dois sonares por permissão.
+- O banner de aprovação não inclui o comando por padrão — prévia de notificação aparece na
+  tela de bloqueio, e comando carrega segredo. A janela mostra tudo, e ela exige desbloqueio.
 
 O gate de primeiro plano usa `lsappinfo` (sem permissões extras). A decisão sai como
 `hookSpecificOutput.decision.behavior: "allow" | "deny"`; qualquer caminho inesperado sai com
@@ -243,6 +251,12 @@ NOTIFY_TN="$HOME/Applications/Claude Code Notifier.app/Contents/MacOS/terminal-n
 
 # Segundos que o dialog de aprovação espera antes de desistir (padrão: 50).
 NOTIFY_DIALOG_TIMEOUT=50
+
+# O que o banner de aprovação mostra: "tool" (padrão) ou "full" (inclui o comando).
+NOTIFY_BANNER_DETAIL=tool
+
+# Uma linha por chamada de hook em .debug.log — os hooks falham em silêncio por design.
+NOTIFY_DEBUG=1
 
 # Checagem de versão nova (banner clicável). 0 desliga.
 NOTIFY_UPDATE_CHECK=0

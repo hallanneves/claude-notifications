@@ -50,6 +50,10 @@ Smart behaviors:
   the browser? It fires.
 - **Useful click**: clicking any notification focuses VSCode (configurable via
   `NOTIFY_ACTIVATE=<bundle-id>`).
+- **No secrets on the lock screen**: the approval banner names only the tool Claude wants to
+  use. The full command lives in the dialog, which needs an unlocked session — macOS previews
+  notifications while the screen is locked. `NOTIFY_BANNER_DETAIL=full` restores the old
+  behaviour.
 - **Periodic reminders**: `repeat.sh` runs detached and survives the end of the session.
 - **New-version notice**: once a day, the end of a turn checks whether the repo carries a
   newer tag. If it does, a **clickable** banner arrives and opens a dialog offering
@@ -157,11 +161,10 @@ bound to `Esc`. That detour is deliberate: this is free software about to run an
 your machine, so reading the diff first should be one click, not an excavation.
 `update.sh --yes` skips the dialog for anyone scripting it.
 
-On install it runs `git pull --ff-only` in the clone it was installed from (recorded at
-install time) and reinstalls; if that clone is gone, it shallow-clones the canonical repo into
-a temporary directory. Nothing is forced: a clone with local commits or uncommitted work fails
-the fast-forward and you get a failure banner instead of a rewritten history. After updating,
-**restart Claude Code** so the hooks reload.
+On install it clones **the exact tag it advertised** (`--branch`) into a throwaway directory
+and runs the installer from there. Your own working copy is never touched: pulling a branch
+would deliver unreleased commits, and checking out a tag inside the repo you work in would
+leave you on a detached HEAD. After updating, **restart Claude Code** so the hooks reload.
 
 ## How it works
 
@@ -245,6 +248,12 @@ NOTIFY_TN="$HOME/Applications/Claude Code Notifier.app/Contents/MacOS/terminal-n
 
 # Seconds the approval dialog waits before giving up (default: 50).
 NOTIFY_DIALOG_TIMEOUT=50
+
+# What the approval banner shows: "tool" (default) or "full" (includes the command).
+NOTIFY_BANNER_DETAIL=tool
+
+# One line per hook call in .debug.log — hooks fail silently by design.
+NOTIFY_DEBUG=1
 
 # Update check (clickable banner). 0 turns it off.
 NOTIFY_UPDATE_CHECK=0

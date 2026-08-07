@@ -24,12 +24,9 @@ cp -f skill/lang/*.sh "$DEST/lang/"
 # borrows osascript's generic document icon.
 cp -f assets/claude-logo.png "$DEST/claude-logo.png"
 cp -f VERSION "$DEST/VERSION"
-# Lets update.sh pull into this working copy instead of cloning a fresh one.
-if [ -d .git ]; then
-  pwd > "$DEST/.source-repo"
-else
-  rm -f "$DEST/.source-repo"
-fi
+# update.sh installs from a throwaway clone of the advertised tag, so the path
+# this was installed from is no longer recorded (older installs left one).
+rm -f "$DEST/.source-repo"
 chmod +x "$DEST"/*.sh
 printf '✅ '; say "$L_INS_SKILL_OK" "$DEST"
 say "$L_INS_CONF_HINT" "$DEST/notify.conf.example"

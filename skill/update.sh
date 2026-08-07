@@ -1,15 +1,15 @@
 #!/bin/bash
-# update.sh — pull the newest claude-notifications and reinstall it.
+# update.sh — install the newest tagged claude-notifications.
 #
-# Wired to the click of the "Atualização disponível" banner, and safe to run by
-# hand. A click never installs anything on its own: it opens a dialog offering
-# Instalar / Ver no GitHub / Cancelar, because this is open source and you are
+# Wired to the click of the "update available" banner, and safe to run by hand.
+# A click never installs anything on its own: it opens a dialog offering
+# Install / View on GitHub / Cancel, because this is open source and you are
 # entitled to read what you are about to run. `--yes` skips the dialog.
 #
-# Prefers the clone the skill was installed from (recorded at install time);
-# falls back to a shallow clone of the canonical repo. Never forces anything:
-# a clone with local commits or uncommitted work fails the fast-forward and is
-# reported, not rewritten.
+# It installs the exact tag it advertised, from a throwaway clone. It never
+# touches your own working copy: pulling a branch could deliver unreleased
+# commits, and checking out a tag in a clone you work in would leave you on a
+# detached HEAD.
 set -uo pipefail
 
 DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -18,6 +18,7 @@ DIR="$(cd "$(dirname "$0")" && pwd)"
 load_notify_conf
 
 LOG="$DIR/.update.log"
+rotate_log "$LOG"
 TMP=""
 trap '[ -n "$TMP" ] && rm -rf "$TMP"' EXIT
 
@@ -36,9 +37,16 @@ case "$BEFORE" in '') BEFORE="?" ;; esac
 WEB="$(printf '%s' "${NOTIFY_UPDATE_REPO%.git}" \
   | sed -e 's|^git@|https://|' -e 's|^\(https://[^/:]*\):|\1/|')"
 
+# The newest version-shaped tag, kept as its RAW name so the checkout matches
+# whatever convention the repo uses ("v1.3.0" and "0.1" both appear in ours).
+TAG="$(git ls-remote --tags --refs "$NOTIFY_UPDATE_REPO" 2>/dev/null \
+  | sed -nE 's|.*refs/tags/(v?([0-9]+(\.[0-9]+){1,2}))$|\2 \1|p' \
+  | sort -V | tail -1 | cut -d' ' -f2)"
+[ -n "$TAG" ] || fail "$(say "$L_UPD_NO_TAGS" "$NOTIFY_UPDATE_REPO")"
+
 if [ "${1:-}" != "--yes" ]; then
   CHOICE="$(run_dialog "$L_UPD_DIALOG_TITLE" \
-    "$(say "$L_UPD_DIALOG_BODY" "$BEFORE" "$WEB")" \
+    "$(say "$L_UPD_DIALOG_BODY" "$BEFORE" "$TAG" "$WEB")" \
     "$DIR/claude-logo.png" \
     "$L_UPD_DIALOG_BUTTONS" \
     "${NOTIFY_DIALOG_TIMEOUT:-120}")"
@@ -55,18 +63,10 @@ if [ "${1:-}" != "--yes" ]; then
   esac
 fi
 
-SRC="$(cat "$DIR/.source-repo" 2>/dev/null)"
-if [ -n "$SRC" ] && [ -d "$SRC/.git" ]; then
-  REPO="$SRC"
-  if ! git -C "$REPO" pull --ff-only >>"$LOG" 2>&1; then
-    fail "$(say "$L_UPD_PULL_FAIL" "$REPO")"
-  fi
-else
-  TMP="$(mktemp -d)"
-  REPO="$TMP/claude-notifications"
-  git clone --depth 1 "$NOTIFY_UPDATE_REPO" "$REPO" >>"$LOG" 2>&1 \
-    || fail "$(say "$L_UPD_CLONE_FAIL" "$NOTIFY_UPDATE_REPO")"
-fi
+TMP="$(mktemp -d)"
+REPO="$TMP/claude-notifications"
+git clone --depth 1 --branch "$TAG" "$NOTIFY_UPDATE_REPO" "$REPO" >>"$LOG" 2>&1 \
+  || fail "$(say "$L_UPD_CLONE_FAIL" "$NOTIFY_UPDATE_REPO")"
 
 "$REPO/install.sh" >>"$LOG" 2>&1 || fail "$(say "$L_UPD_INSTALL_FAIL" "$LOG")"
 

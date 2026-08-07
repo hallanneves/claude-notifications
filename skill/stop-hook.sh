@@ -17,7 +17,10 @@ INPUT="$(cat)"
 # are looking at the editor.
 ( "$DIR/check-update.sh" >/dev/null 2>&1 & ) 2>/dev/null
 
-front_is_editor && exit 0
+if front_is_editor; then
+  debug_log stop "suppressed: editor is frontmost"
+  exit 0
+fi
 
 PROJ="$(printf '%s' "$INPUT" | jq -r '.cwd // empty' 2>/dev/null)"
 PROJ="${PROJ##*/}"

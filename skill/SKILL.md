@@ -1,148 +1,160 @@
 ---
 name: notify
-description: Notificação nativa do macOS (banner + som, estilo Slack). Use quando o usuário pedir /notify, "me avisa/notifica quando X terminar" (build, testes, deploy, CI, job longo), lembretes periódicos ("me lembra a cada 30 min"), ou para parar lembretes ativos (/notify stop, /notify list). Sons semânticos por tipo de evento (aprovação/info/pronto/falha); ícone do Claude no banner; sem emojis nas mensagens.
+description: Native macOS notifications (banner + sound, Slack-style) for Claude Code. Use for /notify, and whenever the user asks to be told when something finishes — "notify me when X is done", "let me know when the build/tests/deploy/CI finishes", "ping me when it's ready", "me avisa/notifica quando X terminar" — for periodic reminders ("remind me every 30 min", "me lembra a cada 30 min"), for periodic work status ("keep me posted", "vai me mandando o status"), to stop active reminders (/notify stop, /notify list), or to check for a new version. Semantic sounds per event type (approval/info/done/failure); Claude icon on the banner; no emojis in messages. Interface strings are bilingual (English/Portuguese).
 ---
 
-# notify — notificações nativas do macOS
+# notify — native macOS notifications
 
-Scripts neste diretório (`~/.claude/skills/notify/`):
+Scripts in this directory (`~/.claude/skills/notify/`):
 
-- `notify.sh [--approval|--info|--done|--fail] "mensagem" ["título"] ["subtítulo"] ["som"]` —
-  banner nativo agora. O tipo preseta título + som; título/som explícitos sobrepõem.
-- `repeat.sh <segundos> "mensagem" ["título"]` — lembrete periódico detached (sobrevive à
-  sessão). `repeat.sh stop` mata todos; `repeat.sh list` lista.
-- `check-update.sh [--force]` — tem versão nova publicada? Sem `--force` é rate-limited (1x
-  por dia) e só fala quando há novidade; com `--force` responde sempre.
-- `update.sh` — baixa a versão nova e reinstala. É o que o clique do banner dispara.
-- `notify-hook.sh` / `stop-hook.sh` / `approval-hook.sh` — adaptadores de hook (Notification /
-  Stop / PermissionRequest), ligados em `~/.claude/settings.json`. Não são chamados pela skill.
+- `notify.sh [--approval|--info|--done|--fail] "message" ["title"] ["subtitle"] ["sound"]` —
+  a banner, now. The type presets a title + sound; an explicit title/sound overrides it.
+- `repeat.sh <seconds> "message" ["title"]` — detached periodic reminder (survives the
+  session). `repeat.sh stop` kills them all; `repeat.sh list` lists them.
+- `check-update.sh [--force]` — is a newer version published? Without `--force` it is
+  rate-limited (once a day) and speaks only when there is news; with `--force` it always answers.
+- `update.sh` — installs the newest tag. This is what the banner's click triggers.
+- `notify-hook.sh` / `stop-hook.sh` / `approval-hook.sh` — hook adapters (Notification /
+  Stop / PermissionRequest) wired in `~/.claude/settings.json`. Not called by the skill.
 
-## Idioma
+## Language
 
-Todas as strings de interface vêm de `lang/en.sh` e `lang/pt.sh`, escolhidos pelo locale do
-macOS ou por `NOTIFY_LANG` no `notify.conf`. **Ao adicionar qualquer texto novo visível ao
-usuário, crie a chave `L_*` nos dois catálogos** — os testes falham se uma faltar, mas em
-produção a string sairia vazia sem erro nenhum. As mensagens que VOCÊ compõe (o conteúdo do
-`/notify`) seguem o idioma da conversa, não o catálogo.
+Two things are localized independently, and confusing them is the usual mistake:
 
-## Identidade visual e sonora (SEMPRE respeitar)
+- **Interface strings** (banner titles, dialog buttons, hook messages) come from
+  `lang/en.sh` and `lang/pt.sh`, chosen by the macOS locale or `NOTIFY_LANG`. When adding any
+  new user-facing text, **create the `L_*` key in every catalogue** — the tests fail if one is
+  missing, but in production the string would silently render empty.
+- **The message YOU write** (the content passed to `/notify`) follows the language of the
+  conversation, not the catalogue. A user writing in Portuguese gets a Portuguese message.
 
-- **SEM emojis** em títulos e mensagens de notificação — preferência explícita do Hallan.
-  A identificação visual vem do **ícone do Claude** no banner (transplantado no
-  terminal-notifier via `set-claude-icon.sh` do repo); a semântica vem do **som + título**.
-- Sons nunca trocam de semântica: Hero é só sucesso, Basso é só falha.
+## Visual and sound identity (ALWAYS respect)
 
-| Tipo | Flag | Título default | Som | Quando usar |
+- **NO emojis** in notification titles or messages. Visual identification comes from the
+  **Claude icon** on the banner; the semantics come from **sound + title**.
+- Sounds never change meaning: Hero is success only, Basso is failure only.
+
+| Type | Flag | Default title | Sound | When |
 |---|---|---|---|---|
-| Aprovação | `--approval` | Aprovação necessária | Submarine | reservado aos hooks |
-| Informativo | `--info` (default) | Claude Code | Glass | notificação que o usuário pediu |
-| Pronto | `--done` | Trabalho concluído | Hero | job terminou com sucesso |
-| Falha | `--fail` | Algo falhou | Basso | job quebrou |
+| Approval | `--approval` | Approval needed | Submarine | reserved for the hooks |
+| Info | `--info` (default) | Claude Code | Glass | a notification the user asked for |
+| Done | `--done` | Work finished | Hero | a job finished successfully |
+| Failure | `--fail` | Something failed | Basso | a job broke |
 
-## Modos de uso
+## Modes
 
-### 1. Agora — `/notify <mensagem>`
-
-```bash
-bash ~/.claude/skills/notify/notify.sh "<mensagem>"
-```
-
-### 2. Quando um job terminar — "me avisa quando X acabar"
-
-1. Rode o comando com Bash `run_in_background: true` (você é re-invocado quando ele termina).
-2. **Cheque o exit code / output real** e só então notifique com o desfecho verdadeiro:
-   - sucesso: `notify.sh --done "suíte web passou (752 testes, 4m)"`
-   - falha:   `notify.sh --fail "build quebrou: <resumo de 1 linha do erro>"`
-   Nunca notificar `--done` sem verificar.
-3. Condição externa (CI, deploy, arquivo aparecer): poll com intervalo proporcional ao processo
-   (job de ~10 min → checar a cada 3–5 min; use ScheduleWakeup/Monitor se disponíveis) e
-   notifique na mudança de estado.
-
-### 3. De tempos em tempos — "me lembra a cada X"
+### 1. Now — `/notify <message>`
 
 ```bash
-bash ~/.claude/skills/notify/repeat.sh <intervalo_em_segundos> "<mensagem>"
+bash ~/.claude/skills/notify/notify.sh "<message>"
 ```
 
-- Processo detached: continua depois que a sessão fechar. Informe o PID e como parar.
+### 2. When a job finishes — "tell me when X is done"
+
+1. Run the command with Bash `run_in_background: true` (you are re-invoked when it ends).
+2. **Check the real exit code / output** and only then notify the true outcome:
+   - success: `notify.sh --done "web suite passed (752 tests, 4m)"`
+   - failure: `notify.sh --fail "build broke: <one-line summary of the error>"`
+   Never send `--done` without verifying.
+3. External condition (CI, deploy, a file appearing): poll at an interval proportional to the
+   process (a ~10 min job → check every 3–5 min; use ScheduleWakeup/Monitor when available)
+   and notify on the state change.
+
+### 3. Every so often — "remind me every X"
+
+```bash
+bash ~/.claude/skills/notify/repeat.sh <interval_in_seconds> "<message>"
+```
+
+- Detached process: it outlives the session. Report the PID and how to stop it.
 - `/notify stop` → `repeat.sh stop` · `/notify list` → `repeat.sh list`
-- `repeat.sh` é SÓ para mensagem fixa (lembrete). Para status de trabalho, use o modo 4 —
-  nunca congele um "status" dentro de um repeat.
+- `repeat.sh` is ONLY for a fixed message (a reminder). For work status use mode 4 — never
+  freeze a "status" inside a repeat.
 
-### 4. Status do trabalho de tempos em tempos — "vai me mandando o status"
+### 4. Work status every so often — "keep me posted"
 
-Quando o usuário pedir progresso periódico de uma tarefa em andamento, quem compõe cada
-mensagem é VOCÊ, na hora, com o estado real — um `--info` curto por checagem:
-
-```bash
-bash ~/.claude/skills/notify/notify.sh "Migração: 3 de 7 arquivos prontos, testes passando" "Status do trabalho"
-```
-
-- **Você mesmo executando a tarefa**: dispare a cada marco concluído (fase, suíte, arquivo
-  grande), mirando o intervalo pedido de forma aproximada. Mudou de rumo ou travou em algo?
-  Isso É status — notifique.
-- **Trabalho em background** (suíte longa, workflow, agente, CI): programe checagens
-  periódicas (ScheduleWakeup/Monitor, intervalo proporcional ao job) e a cada acordada mande
-  o resumo real do momento; ao final, feche com `--done`/`--fail` (modo 2).
-- Conteúdo: 1 linha concreta (o que já foi, o que está rodando, % ou contagem se houver).
-  Título "Status do trabalho". Nunca inventar progresso — se não houver novidade, diga isso
-  ("ainda na suíte de integração, sem falhas até aqui").
-
-### 5. Atualização — "tem versão nova?" / `/notify update`
+When the user asks for periodic progress on ongoing work, YOU compose each message, at the
+time, from the real state — one short `--info` per check:
 
 ```bash
-bash ~/.claude/skills/notify/check-update.sh --force   # responde sempre
-bash ~/.claude/skills/notify/update.sh                 # atualiza agora
+bash ~/.claude/skills/notify/notify.sh "Migration: 3 of 7 files done, tests passing" "Work status"
 ```
 
-- A checagem automática roda no hook `Stop`, detached e no máximo 1x por dia; quando há versão
-  nova, manda um banner **clicável**. O clique abre uma janela com **Instalar / Ver no GitHub
-  / Cancelar** — nunca instala direto (é open source: o usuário tem que poder ler antes).
-  Nunca notifica "está atualizado". `update.sh --yes` pula a janela.
-- Depois de atualizar, avise o usuário que os hooks só recarregam ao **reiniciar o Claude Code**.
-- Desligar: `NOTIFY_UPDATE_CHECK=0` no `notify.conf`.
+- **You are doing the work**: fire at each completed milestone (a phase, a suite, a big file),
+  roughly aiming at the requested interval. Changed direction or got stuck? That IS status.
+- **Background work** (long suite, workflow, agent, CI): schedule periodic checks
+  (ScheduleWakeup/Monitor, interval proportional to the job) and send the real summary on each
+  wake-up; close with `--done`/`--fail` (mode 2).
+- Content: one concrete line (what is done, what is running, a count or % if there is one).
+  Never invent progress — if there is no news, say so ("still on the integration suite, no
+  failures so far").
 
-## Hooks (automático, sem invocação)
+### 5. Updating — "is there a new version?" / `/notify update`
 
-Configurados em `~/.claude/settings.json`:
-- **Notification** → `notify-hook.sh`: banner quando o Claude Code pede permissão ou espera input.
-- **Stop** → `stop-hook.sh`: banner "trabalho pronto" ao fim do turno — **suprimido** quando
-  VSCode/terminal está em primeiro plano (senão toca a cada resposta). `NOTIFY_FORCE=1` ignora o gate.
-- **PermissionRequest** → `approval-hook.sh`: quando você está fora do editor, dialog nativo
-  (NSAlert via `dialog.js`) com **A**provar / **N**egar / abrir no **e**ditor /
-  Fechar, cada um com a letra sublinhada como atalho e **Esc** para fechar sem decidir.
-  Devolve a decisão ao Claude Code (allow e deny confirmados ao vivo). Ferramentas de
-  interação (AskUserQuestion etc.) são puladas. Fechar/Esc, timeout (`NOTIFY_DIALOG_TIMEOUT`,
-  padrão 50s) e qualquer erro caem no prompt normal do terminal (fail-safe). Comando já
-  allowlistado não gera prompt → hook nem roda (não é bug).
+```bash
+bash ~/.claude/skills/notify/check-update.sh --force   # always answers
+bash ~/.claude/skills/notify/update.sh                 # update now
+```
+
+- The automatic check runs in the `Stop` hook, detached, at most once a day; when a newer tag
+  exists it posts a **clickable** banner. The click opens a dialog with **Install / View on
+  GitHub / Cancel** — it never installs straight away (this is open source: the user must be
+  able to read first). It never says "you are up to date". `update.sh --yes` skips the dialog.
+- It installs the exact tag it advertised, from a throwaway clone; your working copy is never
+  touched.
+- After updating, tell the user the hooks only reload when **Claude Code restarts**.
+- Turn it off with `NOTIFY_UPDATE_CHECK=0` in `notify.conf`.
+
+## Hooks (automatic, no invocation)
+
+Configured in `~/.claude/settings.json`:
+- **Notification** → `notify-hook.sh`: routes on `notification_type`. It stays silent on
+  `permission_prompt` when the PermissionRequest hook is wired, because that one already posts
+  a banner — otherwise one request means two banners and two sonar sounds.
+- **Stop** → `stop-hook.sh`: "work done" banner at the end of a turn — **suppressed** while
+  VSCode/terminal is frontmost (otherwise it fires on every reply). `NOTIFY_FORCE=1` bypasses
+  the gate. It also kicks off the rate-limited update check.
+- **PermissionRequest** → `approval-hook.sh`: when you are away from the editor, a native
+  dialog (NSAlert via `dialog.js`) with **A**pprove / **D**eny / open in **e**ditor / Close,
+  each letter underlined as its shortcut and **Esc** to close without deciding. It returns the
+  decision to Claude Code (allow and deny confirmed live). Interaction tools (AskUserQuestion
+  etc.) are skipped. Close/Esc, timeout (`NOTIFY_DIALOG_TIMEOUT`, default 50s) and any error
+  fall back to the normal terminal prompt (fail-safe). An already-allowlisted command raises
+  no prompt → the hook never runs (not a bug).
 
 ## Gotchas
 
-- Quem posta é o app `~/Applications/Claude Code Notifier.app` (criado pelo
-  `install-notifier-app.sh` do repo): é ele que carrega a permissão de notificação e o ícone
-  do Claude. Clicar na notificação foca o VSCode (`NOTIFY_ACTIVATE` muda o bundle id).
-- **Notificação que "sai" mas não aparece**: rodando o terminal-notifier do keg do Homebrew, o
-  macOS nunca pede permissão, aceita a notificação (ela aparece no `-list ALL`) e descarta o
-  banner em silêncio — tudo com `exit 0`, sem erro nenhum. É o app dedicado que resolve.
-  As flags `-sender` (pendura o processo, nunca entrega) e `-appIcon` (ignorada) não servem.
-- Config opcional em `~/.claude/skills/notify/notify.conf` (ver `notify.conf.example`):
-  `NOTIFY_ACTIVATE` (app do clique), `NOTIFY_FRONT_APPS` (apps extras que suprimem banner de
-  "pronto" e dialog) e `NOTIFY_TN` (binário que posta). `repeat.sh` exige intervalo inteiro
-  >= 5s e o `stop` só mata processos com o marker `claude-notify-repeat` (PID reciclado nunca
-  é alvo).
-- Sem terminal-notifier, o fallback é `osascript`: banner sai como "Script Editor" e o
-  clique/"Mostrar" abre uma janela vazia do Script Editor (quirk do macOS).
-- O dialog de aprovação é um NSAlert (JXA), não o `display dialog` do AppleScript: este
-  aceita no máximo 3 botões, não tem atalho por botão nem letra sublinhada. Ele chama
-  `activateIgnoringOtherApps` — sem isso a janela nasce atrás do app em foco e ninguém vê.
-- O timeout do dialog mora no **shell**, não no JS: um NSTimer agendado nunca dispara durante
-  `runModal` (o modal roda em `NSModalPanelRunLoopMode`, o timer entra no modo default). E o
-  watchdog roda com stdout redirecionado — senão ele segura o pipe do chamador e a decisão só
-  chega quando o timeout inteiro termina, mesmo você tendo respondido em 2s.
-- Se nada aparecer: Ajustes do Sistema → Notificações → permitir o app ("Claude Code", ou
-  "Script Editor" no fallback) e estilo em Banners/Alertas, nunca "Nenhum". Foco/Não Perturbe
-  silencia.
-- Aspas na mensagem são seguras — os scripts escapam antes do AppleScript.
-- Fonte canônica/instalação: repo `hallanneves/claude-notifications` (GitHub). Ao mudar algo
-  aqui, refletir lá.
-- Utilitário pessoal do Hallan (macOS) — não referenciar em código/docs de repositório de trabalho.
+- The poster is `~/Applications/Claude Code Notifier.app` (created by the repo's
+  `install-notifier-app.sh`): it carries the notification permission and the Claude icon.
+  Clicking a notification focuses VSCode (`NOTIFY_ACTIVATE` changes the bundle id).
+- **A notification that "sends" but never appears**: running terminal-notifier straight from
+  the Homebrew keg, macOS never asks for permission, accepts the notification (it shows up in
+  `-list ALL`) and drops the banner silently — all with `exit 0` and no error anywhere. The
+  dedicated app is what fixes it. The `-sender` (hangs the process, never delivers) and
+  `-appIcon` (ignored) flags are no help.
+- **The approval banner omits the command by default** (`NOTIFY_BANNER_DETAIL=tool`): macOS
+  shows notification previews on the lock screen, and a command can carry a token. The full
+  command is in the dialog, which needs an unlocked session. `full` restores it in the banner.
+- Optional config in `~/.claude/skills/notify/notify.conf` (see `notify.conf.example`):
+  `NOTIFY_LANG`, `NOTIFY_ACTIVATE` (click target), `NOTIFY_FRONT_APPS` (extra apps that
+  suppress the "done" banner and the dialog), `NOTIFY_TN` (the posting binary),
+  `NOTIFY_BANNER_DETAIL`, `NOTIFY_DIALOG_TIMEOUT` and the `NOTIFY_UPDATE_*` trio.
+  `repeat.sh` requires a whole interval >= 5s, and `stop` only kills processes carrying the
+  `claude-notify-repeat` marker (a recycled PID is never a target).
+- Without terminal-notifier the fallback is `osascript`: the banner is posted as "Script
+  Editor" and clicking it opens an empty Script Editor window (a macOS quirk).
+- The approval dialog is an NSAlert (JXA), not AppleScript's `display dialog`: that one caps
+  at three buttons and has neither per-button shortcuts nor underlined mnemonics. It calls
+  `activateIgnoringOtherApps` — without it the window opens behind the focused app.
+- The dialog timeout lives in the **shell**, not the JS: a scheduled NSTimer never fires
+  during `runModal` (the modal uses `NSModalPanelRunLoopMode`; the timer joins the default
+  mode). The watchdog runs with stdout redirected — otherwise it holds the caller's pipe and
+  the decision only arrives when the whole timeout elapses, even if answered in 2s.
+- **Nothing appears at all**: System Settings → Notifications → allow the app ("Claude Code",
+  or "Script Editor" on the fallback) with the style set to Banners/Alerts, never "None".
+  Focus/Do Not Disturb silences it.
+- Quotes in a message are safe — the scripts escape before AppleScript.
+- `NOTIFY_DEBUG=1` appends one line per hook call to `.debug.log` next to the skill. Every
+  error path exits 0 in silence by design, so this is the way to see what happened.
+- Canonical source / installation: the `hallanneves/claude-notifications` repo on GitHub.
+  When changing anything here, mirror it there.

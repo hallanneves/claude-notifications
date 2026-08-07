@@ -37,11 +37,23 @@ DETAIL="$(printf '%s' "$RAW" | head -c 350 | tr '\n' ' ' | tr '"' "'" | tr '\\' 
 PROMPT="$(say "$L_APPROVAL_PROMPT" "$TOOL")"
 [ -n "$DETAIL" ] && PROMPT="$PROMPT — $DETAIL"
 
-# Banner + sound so the dialog is never missed even off-screen
-"$DIR/notify.sh" --approval "$TOOL: ${DETAIL:-$L_NO_DETAILS}" >/dev/null 2>&1 || true
+debug_log approval "tool=$TOOL detail=${DETAIL:0:80}"
+
+# Banner + sound so the dialog is never missed even off-screen. macOS shows
+# notification previews on the LOCK SCREEN by default, so the command — which
+# can carry a token or a password — is only in the banner when the user asks
+# for it. The dialog always shows it, and that needs an unlocked session.
+if [ "${NOTIFY_BANNER_DETAIL:-tool}" = "full" ]; then
+  BANNER="$TOOL: ${DETAIL:-$L_NO_DETAILS}"
+else
+  BANNER="$(say "$L_APPROVAL_PROMPT" "$TOOL")"
+fi
+"$DIR/notify.sh" --approval "$BANNER" >/dev/null 2>&1 || true
 
 RES="$(run_dialog "$L_APPROVAL_TITLE" "$PROMPT" "$DIR/claude-logo.png" \
   "$L_APPROVAL_BUTTONS" "${NOTIFY_DIALOG_TIMEOUT:-50}")"
+
+debug_log approval "decision=${RES:-<none>}"
 
 case "$RES" in
   approve)

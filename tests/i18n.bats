@@ -108,6 +108,14 @@ EOF
   [ "$en" = "$pt" ]
 }
 
+@test "dialog.js compila (sintaxe valida, sem abrir janela)" {
+  # Os testes stubbam o osascript, entao nada mais executa esse JS: um erro de
+  # sintaxe passaria o CI inteiro e so apareceria como "o dialogo nunca abre",
+  # em silencio, porque o caminho de falha e o proprio fail-safe.
+  run /usr/bin/osacompile -l JavaScript -o "$WORK/dialog.scpt" "$WORK/skill/dialog.js"
+  [ "$status" -eq 0 ]
+}
+
 @test "i18n: nenhum L_ usado nos scripts esta faltando nos catalogos" {
   # Toda referencia \$L_FOO precisa existir nos dois catalogos, senao a string
   # sai vazia em producao sem erro nenhum.

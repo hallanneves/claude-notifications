@@ -22,8 +22,18 @@ if [ -z "$TYPE" ]; then
   esac
 fi
 
+debug_log notification "type=${TYPE:-<none>} msg=${MSG:0:60}"
+
 case "$TYPE" in
   permission_prompt)
+    # A permission prompt raises BOTH this event and PermissionRequest. When
+    # approval-hook.sh is wired it already posts its own banner (plus the
+    # dialog), so notifying here too means two banners and two sonar sounds
+    # for one request. Let the richer hook own the event.
+    if jq -e '(.hooks.PermissionRequest // []) | tostring | contains("/skills/notify/")' \
+         "$HOME/.claude/settings.json" >/dev/null 2>&1; then
+      exit 0
+    fi
     exec "$DIR/notify.sh" --approval "$MSG" ;;
   idle_prompt|agent_needs_input|elicitation_dialog)
     exec "$DIR/notify.sh" "$MSG" "$L_WAITING_TITLE" "" "Submarine" ;;

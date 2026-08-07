@@ -9,7 +9,8 @@
 # restores the stock icon and this script has to be re-run.
 set -euo pipefail
 cd "$(dirname "$0")"
-. ./bundle-lib.sh
+# shellcheck source=skill/notify-lib.sh
+. ./skill/notify-lib.sh
 
 APP="$(icon_target_bundle)" || {
   echo "❌ terminal-notifier não instalado (brew install terminal-notifier)"

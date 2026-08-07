@@ -5,8 +5,10 @@
 # TITLE/SOUND arguments override the preset. No emojis in titles or messages.
 set -euo pipefail
 
-CONF="$HOME/.claude/skills/notify/notify.conf"
-[ -f "$CONF" ] && . "$CONF"
+DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=notify-lib.sh
+. "$DIR/notify-lib.sh"
+load_notify_conf
 
 TYPE="info"
 case "${1:-}" in
@@ -25,12 +27,22 @@ case "$TYPE" in
   info)     : "${TITLE:=Claude Code}";          : "${SOUND:=Glass}" ;;
 esac
 
-# Prefer a dedicated copy of the terminal-notifier bundle when one exists: with
-# its own bundle id it gets its own entry in System Settings > Notifications and
-# carries the Claude icon WITHOUT branding every other terminal-notifier caller
-# on this machine. Override with NOTIFY_TN (notify.conf or environment).
+# An unknown sound name plays nothing, with no error from any notifier — warn
+# so a typo doesn't read as "notifications are broken".
+if [ -n "$SOUND" ] && [ "$SOUND" != "default" ] \
+  && [ ! -f "/System/Library/Sounds/$SOUND.aiff" ] \
+  && [ ! -f "/Library/Sounds/$SOUND.aiff" ] \
+  && [ ! -f "$HOME/Library/Sounds/$SOUND.aiff" ]; then
+  echo "aviso: som '$SOUND' não existe (veja: ls /System/Library/Sounds) — o banner sai mudo" >&2
+fi
+
+# Prefer the dedicated copy of the terminal-notifier bundle when one exists:
+# with its own bundle id it gets its own entry in System Settings >
+# Notifications and carries the Claude icon WITHOUT branding every other
+# terminal-notifier caller on this machine. Override with NOTIFY_TN
+# (notify.conf or environment).
 TN="${NOTIFY_TN:-}"
-DEDICATED="$HOME/Applications/Claude Code Notifier.app/Contents/MacOS/terminal-notifier"
+DEDICATED="$DEDICATED_APP/Contents/MacOS/terminal-notifier"
 if [ -z "$TN" ] && [ -x "$DEDICATED" ]; then
   TN="$DEDICATED"
 elif [ -z "$TN" ]; then
@@ -41,7 +53,7 @@ if [ -n "$TN" ]; then
   # Clicking the notification focuses the editor instead of macOS's blank
   # Script Editor fallback. Override the target app via NOTIFY_ACTIVATE
   # (notify.conf or environment).
-  args=(-message "$MSG" -title "$TITLE" -sound "$SOUND" -activate "${NOTIFY_ACTIVATE:-com.microsoft.VSCode}")
+  args=(-message "$MSG" -title "$TITLE" -sound "$SOUND" -activate "${NOTIFY_ACTIVATE:-$NOTIFY_ACTIVATE_DEFAULT}")
   [ -n "$SUBTITLE" ] && args+=(-subtitle "$SUBTITLE")
   "$TN" "${args[@]}"
 else

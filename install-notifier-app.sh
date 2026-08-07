@@ -13,13 +13,15 @@
 # `brew upgrade` no longer reverts anything.
 set -euo pipefail
 cd "$(dirname "$0")"
-. ./bundle-lib.sh
+# shellcheck source=skill/notify-lib.sh
+. ./skill/notify-lib.sh
 
 SRC="$(brew_bundle)" || {
   echo "❌ terminal-notifier não encontrado (brew install terminal-notifier)"
   exit 1
 }
 
+CREATED=0
 if [ -d "$DEDICATED_APP" ] && [ "${1:-}" != "--force" ]; then
   echo "ℹ️  $DEDICATED_APP já existe — mantendo (use --force para recriar)."
   echo "   Recriar zera a autorização: o macOS pergunta de novo."
@@ -40,20 +42,24 @@ else
   # Editing the plist invalidates the signature — re-sign before anything runs it.
   codesign --force --deep -s - "$DEDICATED_APP"
   echo "✅ bundle criado em $DEDICATED_APP"
+  CREATED=1
 fi
 
 # Applies the icon AND re-signs/re-registers the bundle.
 ./set-claude-icon.sh || echo "⚠️  não consegui aplicar o ícone (rode ./set-claude-icon.sh depois)"
 
 # Registering is not enough: the app has to be LAUNCHED once before macOS will
-# offer the notification permission prompt.
-open "$DEDICATED_APP" 2>/dev/null || true
-sleep 2
-"$DEDICATED_APP/Contents/MacOS/terminal-notifier" \
-  -message "Autorize as notificações para receber os avisos do Claude Code" \
-  -title "Claude Code" -sound Glass >/dev/null 2>&1 || true
+# offer the notification permission prompt. Only needed for a fresh bundle —
+# an existing one already carries its authorization.
+if [ "$CREATED" = 1 ]; then
+  open "$DEDICATED_APP" 2>/dev/null || true
+  sleep 2
+  "$DEDICATED_APP/Contents/MacOS/terminal-notifier" \
+    -message "Autorize as notificações para receber os avisos do Claude Code" \
+    -title "Claude Code" -sound Glass >/dev/null 2>&1 || true
 
-echo
-echo "➡️  O macOS deve mostrar 'Notificações de \"Claude Code\"' — clique em Permitir."
-echo "   Se não aparecer: Ajustes do Sistema → Notificações → Claude Code → ligue"
-echo "   'Permitir notificações' e deixe o estilo em Banners ou Alertas."
+  echo
+  echo "➡️  O macOS deve mostrar 'Notificações de \"Claude Code\"' — clique em Permitir."
+  echo "   Se não aparecer: Ajustes do Sistema → Notificações → Claude Code → ligue"
+  echo "   'Permitir notificações' e deixe o estilo em Banners ou Alertas."
+fi

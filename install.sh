@@ -14,7 +14,10 @@ command -v jq >/dev/null 2>&1 || { echo "❌ jq não encontrado (vem no macOS 15
 
 DEST="$HOME/.claude/skills/notify"
 mkdir -p "$DEST"
-cp -f skill/SKILL.md skill/notify.conf.example skill/*.sh "$DEST/"
+cp -f skill/SKILL.md skill/notify.conf.example skill/*.sh skill/*.js "$DEST/"
+# The approval dialog sets this as its NSAlert icon; without it the alert
+# borrows osascript's generic document icon.
+cp -f assets/claude-logo.png "$DEST/claude-logo.png"
 chmod +x "$DEST"/*.sh
 echo "✅ skill instalada em $DEST"
 echo "   (config opcional: copie $DEST/notify.conf.example para notify.conf e edite)"

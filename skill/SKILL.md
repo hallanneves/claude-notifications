@@ -83,11 +83,13 @@ Configurados em `~/.claude/settings.json`:
 - **Notification** → `notify-hook.sh`: banner quando o Claude Code pede permissão ou espera input.
 - **Stop** → `stop-hook.sh`: banner "trabalho pronto" ao fim do turno — **suprimido** quando
   VSCode/terminal está em primeiro plano (senão toca a cada resposta). `NOTIFY_FORCE=1` ignora o gate.
-- **PermissionRequest** → `approval-hook.sh`: quando você está fora do editor, dialog nativo com
-  **Aprovar / Abrir no editor / Negar** que devolve a decisão ao Claude Code (allow e deny
-  confirmados ao vivo). Ferramentas de interação (AskUserQuestion etc.) são puladas. Timeout/erro
-  cai no prompt normal do terminal (fail-safe). Comando já allowlistado não gera prompt → hook
-  nem roda (não é bug).
+- **PermissionRequest** → `approval-hook.sh`: quando você está fora do editor, dialog nativo
+  (NSAlert via `approval-dialog.js`) com **A**provar / **N**egar / abrir no **e**ditor /
+  Fechar, cada um com a letra sublinhada como atalho e **Esc** para fechar sem decidir.
+  Devolve a decisão ao Claude Code (allow e deny confirmados ao vivo). Ferramentas de
+  interação (AskUserQuestion etc.) são puladas. Fechar/Esc, timeout (`NOTIFY_DIALOG_TIMEOUT`,
+  padrão 50s) e qualquer erro caem no prompt normal do terminal (fail-safe). Comando já
+  allowlistado não gera prompt → hook nem roda (não é bug).
 
 ## Gotchas
 
@@ -105,8 +107,13 @@ Configurados em `~/.claude/settings.json`:
   é alvo).
 - Sem terminal-notifier, o fallback é `osascript`: banner sai como "Script Editor" e o
   clique/"Mostrar" abre uma janela vazia do Script Editor (quirk do macOS).
-- O dialog de aprovação usa `activate` antes do `display dialog` — sem isso a janela nasce
-  atrás do app em foco e ninguém vê.
+- O dialog de aprovação é um NSAlert (JXA), não o `display dialog` do AppleScript: este
+  aceita no máximo 3 botões, não tem atalho por botão nem letra sublinhada. Ele chama
+  `activateIgnoringOtherApps` — sem isso a janela nasce atrás do app em foco e ninguém vê.
+- O timeout do dialog mora no **shell**, não no JS: um NSTimer agendado nunca dispara durante
+  `runModal` (o modal roda em `NSModalPanelRunLoopMode`, o timer entra no modo default). E o
+  watchdog roda com stdout redirecionado — senão ele segura o pipe do chamador e a decisão só
+  chega quando o timeout inteiro termina, mesmo você tendo respondido em 2s.
 - Se nada aparecer: Ajustes do Sistema → Notificações → permitir o app ("Claude Code", ou
   "Script Editor" no fallback) e estilo em Banners/Alertas, nunca "Nenhum". Foco/Não Perturbe
   silencia.

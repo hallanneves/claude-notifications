@@ -40,22 +40,42 @@ PROMPT="Claude quer usar: $TOOL"
 # Banner + sound so the dialog is never missed even off-screen
 "$DIR/notify.sh" --approval "$TOOL: ${DETAIL:-sem detalhes}" >/dev/null 2>&1 || true
 
-# 'activate' first: a dialog from a background process opens BEHIND the
-# frontmost app (or on another Space) unless osascript activates itself.
-RES="$(osascript -e "activate" -e "display dialog \"$PROMPT\" with title \"Claude Code — aprovação\" buttons {\"Negar\", \"Abrir no editor\", \"Aprovar\"} default button \"Abrir no editor\" giving up after 50 with icon caution" 2>/dev/null)" || RES=""
+# The dialog owns no clock of its own (an NSTimer never fires inside a modal
+# run loop), so the timeout lives here: run it detached and kill it if nobody
+# answers. A killed dialog prints nothing, which is the fail-safe path.
+OUT="$(mktemp)"
+TIMED_OUT="$OUT.timeout"
+trap 'rm -f "$OUT" "$TIMED_OUT"' EXIT
+osascript -l JavaScript "$DIR/approval-dialog.js" "$PROMPT" "$DIR/claude-logo.png" >"$OUT" 2>/dev/null &
+DIALOG_PID=$!
+# The watchdog MUST NOT inherit our stdout: a command substitution upstream
+# stays blocked until every writer closes the pipe, which would hold the
+# decision hostage for the full timeout after the user already answered.
+( sleep "${NOTIFY_DIALOG_TIMEOUT:-50}"; : > "$TIMED_OUT"; kill "$DIALOG_PID" 2>/dev/null ) >/dev/null 2>&1 &
+WATCHDOG=$!
+wait "$DIALOG_PID" 2>/dev/null
+{ kill "$WATCHDOG" 2>/dev/null; wait "$WATCHDOG" 2>/dev/null; } 2>/dev/null
+
+# A dialog torn down mid-flight can still flush a token (AppKit unwinds the
+# modal session as the process dies, and that has produced a bogus "approve").
+# Whatever the corpse wrote, a timeout is never a decision.
+if [ -f "$TIMED_OUT" ]; then
+  RES=""
+else
+  RES="$(cat "$OUT")"
+fi
 
 case "$RES" in
-  *"gave up:true"*)
-    exit 0 ;;
-  *"button returned:Aprovar"*)
+  approve)
     printf '%s' "$INPUT" | jq -c '{hookSpecificOutput:{hookEventName:"PermissionRequest",decision:{behavior:"allow",updatedInput:(.tool_input // {})}}}'
     ;;
-  *"button returned:Negar"*)
+  deny)
     printf '{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"deny","message":"Negado por %s via dialog de notificação"}}}' "${USER:-usuário}"
     ;;
-  *"button returned:Abrir no editor"*)
+  editor)
     open -b "${NOTIFY_ACTIVATE:-$NOTIFY_ACTIVATE_DEFAULT}" 2>/dev/null || true
     exit 0 ;;
   *)
+    # "Fechar"/Esc, timeout, or any failure: no decision, normal prompt.
     exit 0 ;;
 esac

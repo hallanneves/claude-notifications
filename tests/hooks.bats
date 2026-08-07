@@ -44,7 +44,7 @@ approval() { "$WORK/skill/approval-hook.sh"; }
 }
 
 @test "approval: Aprovar devolve behavior allow com updatedInput" {
-  export NOTIFY_FORCE=1 OSA_RESULT="button returned:Aprovar, gave up:false"
+  export NOTIFY_FORCE=1 OSA_RESULT="approve"
   run bash -c 'echo "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"ls -la\"}}" | "$0"' "$WORK/skill/approval-hook.sh"
   [ "$status" -eq 0 ]
   [ "$(echo "$output" | jq -r '.hookSpecificOutput.decision.behavior')" = "allow" ]
@@ -52,21 +52,48 @@ approval() { "$WORK/skill/approval-hook.sh"; }
 }
 
 @test "approval: Negar devolve behavior deny" {
-  export NOTIFY_FORCE=1 OSA_RESULT="button returned:Negar, gave up:false"
+  export NOTIFY_FORCE=1 OSA_RESULT="deny"
   run bash -c 'echo "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"rm x\"}}" | "$0"' "$WORK/skill/approval-hook.sh"
   [ "$status" -eq 0 ]
   [ "$(echo "$output" | jq -r '.hookSpecificOutput.decision.behavior')" = "deny" ]
 }
 
-@test "approval: timeout (gave up) cai no fail-safe sem output" {
-  export NOTIFY_FORCE=1 OSA_RESULT="button returned:Abrir no editor, gave up:true"
+@test "approval: Fechar/Esc nao decide nada" {
+  export NOTIFY_FORCE=1 OSA_RESULT="ignore"
   run bash -c 'echo "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"ls\"}}" | "$0"' "$WORK/skill/approval-hook.sh"
   [ "$status" -eq 0 ]
   [ -z "$output" ]
 }
 
+@test "approval: token desconhecido cai no fail-safe" {
+  export NOTIFY_FORCE=1 OSA_RESULT="lixo-inesperado"
+  run bash -c 'echo "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"ls\"}}" | "$0"' "$WORK/skill/approval-hook.sh"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "approval: timeout descarta token tardio e nunca aprova" {
+  # O AppKit pode cuspir um token enquanto o processo morre; o hook precisa
+  # ignorar qualquer coisa escrita depois que o watchdog disparou.
+  export NOTIFY_FORCE=1 OSA_RESULT="approve" OSA_DELAY=3 NOTIFY_DIALOG_TIMEOUT=1
+  run bash -c 'echo "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"rm -rf /\"}}" | "$0"' "$WORK/skill/approval-hook.sh"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "approval: resposta rapida nao espera o timeout inteiro" {
+  export NOTIFY_FORCE=1 OSA_RESULT="deny" NOTIFY_DIALOG_TIMEOUT=30
+  start="$(date +%s)"
+  run bash -c 'echo "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"ls\"}}" | "$0"' "$WORK/skill/approval-hook.sh"
+  elapsed=$(( $(date +%s) - start ))
+  [ "$status" -eq 0 ]
+  [ "$(echo "$output" | jq -r '.hookSpecificOutput.decision.behavior')" = "deny" ]
+  # O watchdog nao pode segurar o pipe do chamador ate o fim do timeout.
+  [ "$elapsed" -lt 10 ]
+}
+
 @test "approval: Abrir no editor foca o editor e nao decide" {
-  export NOTIFY_FORCE=1 OSA_RESULT="button returned:Abrir no editor, gave up:false"
+  export NOTIFY_FORCE=1 OSA_RESULT="editor"
   run bash -c 'echo "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"ls\"}}" | "$0"' "$WORK/skill/approval-hook.sh"
   [ "$status" -eq 0 ]
   [ -z "$output" ]
@@ -74,11 +101,20 @@ approval() { "$WORK/skill/approval-hook.sh"; }
 }
 
 @test "approval: comando longo e truncado com aviso explicito" {
-  export NOTIFY_FORCE=1 OSA_RESULT="button returned:Negar, gave up:false"
+  export NOTIFY_FORCE=1 OSA_RESULT="deny"
   long="$(printf 'a%.0s' $(seq 1 400))"
   run bash -c "echo '{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"$long\"}}' | \"\$0\"" "$WORK/skill/approval-hook.sh"
   [ "$status" -eq 0 ]
   [[ "$(cat "$WORK/osascript.calls")" == *"[TRUNCADO"* ]]
+}
+
+@test "approval: dialog recebe o script e o icone do Claude" {
+  export NOTIFY_FORCE=1 OSA_RESULT="ignore"
+  run bash -c 'echo "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"ls\"}}" | "$0"' "$WORK/skill/approval-hook.sh"
+  [ "$status" -eq 0 ]
+  calls="$(cat "$WORK/osascript.calls")"
+  [[ "$calls" == *"approval-dialog.js"* ]]
+  [[ "$calls" == *"claude-logo.png"* ]]
 }
 
 # ---- stop-hook ---------------------------------------------------------------

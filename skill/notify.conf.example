@@ -15,3 +15,7 @@
 # install-notifier-app.sh quando existe, senão o terminal-notifier do PATH.
 # Só defina para apontar para outro bundle.
 #NOTIFY_TN="$HOME/Applications/Claude Code Notifier.app/Contents/MacOS/terminal-notifier"
+
+# Segundos que o dialog de aprovação fica aberto antes de desistir e cair no
+# prompt normal do terminal (padrão: 50).
+#NOTIFY_DIALOG_TIMEOUT=50

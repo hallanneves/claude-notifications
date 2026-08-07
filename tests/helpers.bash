@@ -31,6 +31,7 @@ copy_repo() {
   mkdir -p "$WORK/repo"
   cp "$REPO/install.sh" "$REPO/uninstall.sh" "$REPO/hooks.json" "$WORK/repo/"
   cp -R "$REPO/skill" "$WORK/repo/skill"
+  cp -R "$REPO/assets" "$WORK/repo/assets"
 }
 
 # Replace the copied notify.sh with a recorder: argv goes to $WORK/notify.calls
@@ -56,11 +57,14 @@ EOF
   chmod +x "$STUB/lsappinfo"
 }
 
-# osascript stub: records argv to $WORK/osascript.calls, prints $OSA_RESULT.
+# osascript stub: records argv to $WORK/osascript.calls and prints $OSA_RESULT
+# (the token the real approval-dialog.js would print). OSA_DELAY simulates a
+# user who never answers, so the caller's timeout can be exercised.
 stub_osascript() {
   cat > "$STUB/osascript" <<EOF
 #!/bin/bash
 printf '%s\n' "\$@" >> "$WORK/osascript.calls"
+[ -n "\${OSA_DELAY:-}" ] && sleep "\$OSA_DELAY"
 printf '%s' "\${OSA_RESULT:-}"
 EOF
   chmod +x "$STUB/osascript"

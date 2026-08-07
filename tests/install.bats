@@ -24,6 +24,9 @@ teardown() { common_teardown; }
   done
   [ -x "$HOME/.claude/skills/notify/notify.sh" ]
   [ -f "$HOME/.claude/skills/notify/notify-lib.sh" ]
+  # O dialog de aprovacao e seu icone precisam viajar junto com a skill.
+  [ -f "$HOME/.claude/skills/notify/approval-dialog.js" ]
+  [ -f "$HOME/.claude/skills/notify/claude-logo.png" ]
 }
 
 @test "re-rodar e idempotente: nada muda e nenhum backup novo" {

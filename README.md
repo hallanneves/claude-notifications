@@ -25,11 +25,21 @@ Comportamentos inteligentes:
 
 - **Botão de aprovação**: quando o Claude Code vai pedir permissão e o seu editor/terminal
   **não** está em primeiro plano (VSCode, Cursor, Zed, Windsurf, iTerm2, Warp, Ghostty…),
-  aparece um dialog nativo em primeiro plano com **Aprovar / Abrir no editor / Negar**. A
-  escolha volta pro Claude Code como decisão real (allow e deny testados). Timeout (50s),
-  erro ou "Abrir no editor" caem no prompt normal do terminal — fail-safe. Comandos longos
-  aparecem truncados **com aviso explícito** (nunca corte silencioso — use "Abrir no editor"
-  para ver tudo), e ferramentas de interação (perguntas do próprio Claude) não geram dialog.
+  aparece um dialog nativo em primeiro plano, com o ícone do Claude e quatro ações — cada uma
+  com **atalho de teclado na letra sublinhada**:
+
+  | Botão | Atalho | O que faz |
+  |---|---|---|
+  | **A**provar | `A` | devolve `allow` ao Claude Code |
+  | **N**egar | `N` | devolve `deny` |
+  | Abrir no **e**ditor | `E` | foca o editor e deixa você decidir lá |
+  | Fechar (Esc) | `Esc` | fecha e ignora, sem decidir nada |
+
+  Fechar/Esc, timeout (50s, ajustável em `NOTIFY_DIALOG_TIMEOUT`), erro ou "Abrir no editor"
+  caem no prompt normal do terminal — fail-safe. **Enter não faz nada**: aprovar exige um
+  clique ou a tecla `A`, nunca um toque distraído. Comandos longos aparecem truncados **com
+  aviso explícito** (nunca corte silencioso — use "Abrir no editor" para ver tudo), e
+  ferramentas de interação (perguntas do próprio Claude) não geram dialog.
 - **"Trabalho pronto" sem spam**: o banner de fim de turno é suprimido enquanto o
   editor/terminal está em primeiro plano (você já está vendo o resultado). Saiu pro Slack ou
   navegador? Ele dispara.
@@ -142,7 +152,8 @@ claude-notifications/
 │   ├── notify.conf.example # config opcional (app do clique, apps que suprimem)
 │   ├── notify-hook.sh      # hook Notification → roteia por notification_type
 │   ├── stop-hook.sh        # hook Stop → banner "pronto" (suprimido c/ editor em foco)
-│   └── approval-hook.sh    # hook PermissionRequest → dialog Aprovar/Negar
+│   ├── approval-hook.sh    # hook PermissionRequest → dialog Aprovar/Negar
+│   └── approval-dialog.js  # o dialog em si (NSAlert com atalhos e ícone do Claude)
 └── tests/                  # suíte bats (roda no CI em macOS + shellcheck)
 ```
 
@@ -157,11 +168,21 @@ Notas de segurança do design:
 - O hook `Notification` roteia pelo campo `notification_type` do Claude Code (permissão,
   espera, agente concluído…), com fallback por palavra-chave para versões antigas.
 
-O gate de primeiro plano usa `lsappinfo` (sem permissões extras). O dialog de aprovação faz
-`activate` antes do `display dialog` — sem isso a janela nasce **atrás** do app em foco. A
-decisão sai como `hookSpecificOutput.decision.behavior: "allow" | "deny"`; qualquer caminho
-inesperado sai com código 0 e sem output, o que faz o Claude Code mostrar o prompt interativo
-normal.
+O gate de primeiro plano usa `lsappinfo` (sem permissões extras). A decisão sai como
+`hookSpecificOutput.decision.behavior: "allow" | "deny"`; qualquer caminho inesperado sai com
+código 0 e sem output, o que faz o Claude Code mostrar o prompt interativo normal.
+
+O dialog é um **NSAlert** (JXA), não o `display dialog` do AppleScript — este aceita no
+máximo 3 botões (precisamos de 4) e não tem atalho por botão nem letra sublinhada. Três
+detalhes que só aparecem quando se tenta:
+
+- O timeout mora no **shell**, não no JavaScript: um `NSTimer` agendado nunca dispara durante
+  `runModal`, porque o modal roda em `NSModalPanelRunLoopMode` e o timer entra no modo default.
+- O watchdog do timeout roda com stdout redirecionado. Sem isso ele segura o pipe do
+  chamador, e a decisão só chega ao Claude Code quando o timeout inteiro termina — mesmo você
+  tendo respondido em 2 segundos.
+- Os títulos sublinhados são aplicados **depois** de `alert.layout`: o NSAlert reconstrói os
+  títulos dos botões ao fazer layout e descartaria um `attributedTitle` definido antes.
 
 > **Nota**: o formato de resposta usado (`hookSpecificOutput.decision.behavior`) é o formato
 > documentado atual do hook `PermissionRequest`, e os caminhos allow e deny também foram
@@ -182,6 +203,9 @@ NOTIFY_FRONT_APPS="MeuEditor,OutroTerminal"
 # Binário usado para notificar. Por padrão o app dedicado quando existe, senão o
 # terminal-notifier do PATH. Só mexa se quiser apontar para outro bundle.
 NOTIFY_TN="$HOME/Applications/Claude Code Notifier.app/Contents/MacOS/terminal-notifier"
+
+# Segundos que o dialog de aprovação espera antes de desistir (padrão: 50).
+NOTIFY_DIALOG_TIMEOUT=50
 ```
 
 Outros ajustes:

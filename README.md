@@ -47,9 +47,11 @@ Comportamentos inteligentes:
 - **"Trabalho pronto" sem spam**: o banner de fim de turno é suprimido enquanto o
   editor/terminal está em primeiro plano (você já está vendo o resultado). Saiu pro Slack ou
   navegador? Ele dispara.
-- **Clique útil**: clicar numa notificação abre **a janela daquele projeto** no editor — não
-  só o app. Com cinco projetos abertos, você cai no certo. O app é configurável em
-  `NOTIFY_ACTIVATE=<bundle-id>`, e `NOTIFY_ACTIVATE_PATH=never` volta a só focar o app.
+- **Clique volta para onde você estava**: rodando num terminal, o clique seleciona a **aba
+  exata** que gerou a notificação (iTerm2 pelo id de sessão, Terminal.app pelo tty). Rodando
+  como extensão do editor, foca a **janela daquele projeto** — com cinco projetos abertos você
+  cai no certo. Aba de editor não é endereçável: nenhum editor expõe janelas/abas ao
+  AppleScript. `NOTIFY_ACTIVATE_PATH=never` volta a só focar o app.
 - **Silenciar para focar**: `mute.sh 30m` cala tudo por meia hora — banners, lembretes, aviso
   de atualização e **também a janela de aprovação**, que é a interrupção mais agressiva de
   todas. Enquanto silenciado, a permissão cai no prompt normal do terminal, que espera

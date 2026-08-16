@@ -3,6 +3,26 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.6.0] — 2026-08-16
+
+### Added
+- Clicking a notification now returns to the **exact terminal tab** that raised it, when the
+  host exposes one: iTerm2 matched by `ITERM_SESSION_ID`, Terminal.app matched by the tty.
+  The identity is captured while the hook runs and baked into the click action, because none
+  of it is reachable by the time someone clicks. "Open in editor" takes the same route.
+- A terminal session that has since closed falls through to the project window rather than
+  failing, and a host with no session identity behaves exactly as before.
+
+### Known limits
+- Running Claude Code as an **editor extension** (the VS Code integration), there is no
+  terminal session to identify: no tty, no `TERM_PROGRAM`, no session id — the process tree is
+  `claude` → `Code Helper (Plugin)` → `Code`. Focusing the window that holds the project
+  folder is the ceiling there.
+- **No editor exposes its windows or tabs to AppleScript** (VS Code answers `-1728` to a
+  window query), so "which tab" is not addressable for editors at all. Raising a window by
+  title through System Events would need Accessibility permission and still could not
+  separate two windows on the same folder.
+
 ## [1.5.0] — 2026-08-16
 
 Both open issues.

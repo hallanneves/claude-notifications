@@ -61,6 +61,49 @@ MUTE_FILE="${MUTE_FILE:-$HOME/.claude/skills/notify/.mute-until}"
 # Only editors get the folder: handing a path to a terminal bundle opens a NEW
 # window instead of focusing anything. NOTIFY_ACTIVATE_PATH=always|never
 # overrides the guess.
+# Single-quotes a value for embedding in a shell command string.
+shq() {
+  printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"
+}
+
+# The controlling terminal of this session, as a device path — empty when there
+# is none, which is the case whenever Claude Code runs as an editor extension.
+# NOTIFY_TTY overrides the lookup for tests.
+current_tty() {
+  local tty
+  tty="${NOTIFY_TTY-$(ps -o tty= -p $$ 2>/dev/null | tr -d ' ')}"
+  case "$tty" in
+    ''|'??'|'?') printf '' ;;
+    /dev/*)      printf '%s' "$tty" ;;
+    *)           printf '/dev/%s' "$tty" ;;
+  esac
+}
+
+# The click action, built while the hook still has the context: which terminal
+# session raised this, and which project it was in.
+focus_cmd() {
+  local dir
+  dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  printf '%s %s %s %s %s' \
+    "$(shq "$dir/focus.sh")" "$(shq "$1")" "$(shq "${TERM_PROGRAM:-}")" \
+    "$(shq "${ITERM_SESSION_ID:-}")" "$(shq "$(current_tty)")"
+}
+
+# Same thing, run right now instead of baked into a click.
+focus_now() {
+  local dir
+  dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  "$dir/focus.sh" "$1" "${TERM_PROGRAM:-}" "${ITERM_SESSION_ID:-}" "$(current_tty)"
+}
+
+# True when a click has somewhere specific to land: a terminal session we can
+# name, or a project folder an editor can focus.
+has_focus_target() {
+  [ -n "${ITERM_SESSION_ID:-}" ] && return 0
+  [ "${TERM_PROGRAM:-}" = "Apple_Terminal" ] && return 0
+  should_open_path "$1"
+}
+
 should_open_path() {
   local path="$1" mode="${NOTIFY_ACTIVATE_PATH:-auto}"
   [ -n "$path" ] || return 1

@@ -126,8 +126,11 @@ Configured in `~/.claude/settings.json`:
 - **Notification** → `notify-hook.sh`: routes on `notification_type`. It stays silent on
   `permission_prompt` when the PermissionRequest hook is wired, because that one already posts
   a banner — otherwise one request means two banners and two sonar sounds.
-- Clicking any notification opens the **project folder** of the session that raised it, so you
-  land on the right editor window (`NOTIFY_ACTIVATE_PATH=never` restores plain app focus).
+- Clicking any notification returns to where it came from: the exact terminal tab (iTerm2 by
+  session id, Terminal.app by tty) when the host exposes one, otherwise the editor window
+  holding that project folder. Editor TABS are not addressable — no editor exposes windows or
+  tabs to AppleScript — and as an editor extension there is no terminal session to identify at
+  all. `NOTIFY_ACTIVATE_PATH=never` restores plain app focus.
 - **Stop** → `stop-hook.sh`: "work done" banner at the end of a turn — **suppressed** while
   VSCode/terminal is frontmost (otherwise it fires on every reply). `NOTIFY_FORCE=1` bypasses
   the gate. It also kicks off the rate-limited update check.

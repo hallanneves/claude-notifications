@@ -59,10 +59,10 @@ if [ -n "$TN" ]; then
     # Turns the banner into an action: clicking it runs this command instead
     # of focusing an app. Mutually exclusive with -activate.
     args+=(-execute "$NOTIFY_EXECUTE")
-  elif should_open_path "${NOTIFY_TARGET_PATH:-}"; then
-    # -activate only takes a bundle id, so landing on the right project window
-    # has to go through -execute.
-    args+=(-execute "$(open_target_cmd "$NOTIFY_TARGET_PATH")")
+  elif has_focus_target "${NOTIFY_TARGET_PATH:-}"; then
+    # -activate only takes a bundle id, so landing on the exact terminal tab
+    # (or the right project window) has to go through -execute.
+    args+=(-execute "$(focus_cmd "${NOTIFY_TARGET_PATH:-}")")
   else
     # Clicking the notification focuses the editor instead of macOS's blank
     # Script Editor fallback. Override the target app via NOTIFY_ACTIVATE

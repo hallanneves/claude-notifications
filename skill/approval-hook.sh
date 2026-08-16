@@ -74,8 +74,9 @@ case "$RES" in
       '{hookSpecificOutput:{hookEventName:"PermissionRequest",decision:{behavior:"deny",message:$reason}}}'
     ;;
   editor)
-    # Land on the window holding THIS project, not just somewhere in the app.
-    eval "$(open_target_cmd "$CWD")" 2>/dev/null || true
+    # Land where the request came from: the exact terminal tab when the host
+    # exposes one, otherwise the window holding this project.
+    focus_now "$CWD" >/dev/null 2>&1 || true
     exit 0 ;;
   *)
     # "Fechar"/Esc, timeout, or any failure: no decision, normal prompt.

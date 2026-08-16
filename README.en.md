@@ -48,9 +48,11 @@ Smart behaviors:
 - **"Work done" without spam**: the end-of-turn banner is suppressed while your
   editor/terminal is frontmost (you are already looking at the result). Switched to Slack or
   the browser? It fires.
-- **Useful click**: clicking a notification opens **that project's window** in the editor —
-  not just the app. With five projects open you land on the right one. The app is set with
-  `NOTIFY_ACTIVATE=<bundle-id>`, and `NOTIFY_ACTIVATE_PATH=never` restores plain app focus.
+- **A click returns you to where you were**: running in a terminal, it selects the **exact
+  tab** that raised the notification (iTerm2 by session id, Terminal.app by tty). Running as an
+  editor extension, it focuses the **window holding that project** — with five projects open
+  you land on the right one. Editor tabs are not addressable: no editor exposes its windows or
+  tabs to AppleScript. `NOTIFY_ACTIVATE_PATH=never` restores plain app focus.
 - **Mute to focus**: `mute.sh 30m` silences everything for half an hour — banners, reminders,
   the update notice and **the approval dialog too**, which is the most aggressive interruption
   of the lot. While muted, a permission request falls back to the normal terminal prompt,

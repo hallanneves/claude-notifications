@@ -12,6 +12,7 @@ setup() {
 printf '%s\n' "\$@" > "$WORK/tn.args"
 EOF
   chmod +x "$STUB/tn"
+  export NOTIFY_TTY="" TERM_PROGRAM="" ITERM_SESSION_ID=""
 }
 
 teardown() { common_teardown; }
@@ -27,7 +28,8 @@ teardown() { common_teardown; }
     run "$WORK/skill/notify.sh" --done "ok"
   [ "$status" -eq 0 ]
   args="$(cat "$WORK/tn.args")"
-  [[ "$args" == *"open -b com.microsoft.VSCode '/tmp/meu-projeto'"* ]]
+  [[ "$args" == *"focus.sh"* ]]
+  [[ "$args" == *"/tmp/meu-projeto"* ]]
   [[ "$args" != *"-activate"* ]]
 }
 
@@ -42,7 +44,9 @@ teardown() { common_teardown; }
   NOTIFY_ACTIVATE="com.googlecode.iterm2" NOTIFY_ACTIVATE_PATH=always \
     NOTIFY_TARGET_PATH="/tmp/p" NOTIFY_TN="$STUB/tn" run "$WORK/skill/notify.sh" --done "ok"
   [ "$status" -eq 0 ]
-  [[ "$(cat "$WORK/tn.args")" == *"open -b com.googlecode.iterm2 '/tmp/p'"* ]]
+  args="$(cat "$WORK/tn.args")"
+  [[ "$args" == *"focus.sh"* ]]
+  [[ "$args" == *"/tmp/p"* ]]
 }
 
 @test "clique: NOTIFY_ACTIVATE_PATH=never volta ao comportamento antigo" {
@@ -56,7 +60,9 @@ teardown() { common_teardown; }
   NOTIFY_ACTIVATE="com.todesktop.230313mzl4w4u92" NOTIFY_TARGET_PATH="/tmp/p" \
     NOTIFY_TN="$STUB/tn" run "$WORK/skill/notify.sh" --done "ok"
   [ "$status" -eq 0 ]
-  [[ "$(cat "$WORK/tn.args")" == *"open -b com.todesktop.230313mzl4w4u92 '/tmp/p'"* ]]
+  args="$(cat "$WORK/tn.args")"
+  [[ "$args" == *"focus.sh"* ]]
+  [[ "$args" == *"/tmp/p"* ]]
 }
 
 @test "clique: stop-hook manda o cwd do projeto" {
@@ -64,7 +70,7 @@ teardown() { common_teardown; }
   export FAKE_FRONT="Slack"
   run bash -c 'echo "{\"cwd\":\"/tmp/projeto-x\"}" | NOTIFY_TN='"$STUB"'/tn "$0"' "$WORK/skill/stop-hook.sh"
   [ "$status" -eq 0 ]
-  [[ "$(cat "$WORK/tn.args")" == *"open -b com.microsoft.VSCode '/tmp/projeto-x'"* ]]
+  [[ "$(cat "$WORK/tn.args")" == *"/tmp/projeto-x"* ]]
 }
 
 @test "clique: 'Abrir no editor' abre a pasta daquela sessao" {

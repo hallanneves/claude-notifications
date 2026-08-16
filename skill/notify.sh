@@ -15,6 +15,9 @@ case "${1:-}" in
   --approval|--info|--done|--fail) TYPE="${1#--}"; shift ;;
 esac
 
+# Focused work wins over every banner, including the update one.
+is_muted && exit 0
+
 MSG="${1:?usage: notify.sh [--approval|--info|--done|--fail] MESSAGE [TITLE] [SUBTITLE] [SOUND]}"
 TITLE="${2:-}"
 SUBTITLE="${3:-}"
@@ -56,6 +59,10 @@ if [ -n "$TN" ]; then
     # Turns the banner into an action: clicking it runs this command instead
     # of focusing an app. Mutually exclusive with -activate.
     args+=(-execute "$NOTIFY_EXECUTE")
+  elif should_open_path "${NOTIFY_TARGET_PATH:-}"; then
+    # -activate only takes a bundle id, so landing on the right project window
+    # has to go through -execute.
+    args+=(-execute "$(open_target_cmd "$NOTIFY_TARGET_PATH")")
   else
     # Clicking the notification focuses the editor instead of macOS's blank
     # Script Editor fallback. Override the target app via NOTIFY_ACTIVATE

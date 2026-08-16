@@ -3,6 +3,29 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.5.0] — 2026-08-16
+
+Both open issues.
+
+### Added
+- **Focus mode** (#2). `mute.sh 30m` (also `45s`, `2h`, `1d`, `on`, `off`, `status`) silences
+  banners, reminders and the update notice — **and the approval dialog**, which is the loudest
+  interruption of the three. While muted a permission request falls back to Claude Code's
+  terminal prompt, which waits quietly. macOS Focus already hides banners, but nothing in it
+  holds back a modal dialog, which is why this could not be delegated to the system.
+- An expired or corrupted mute stamp clears itself, so a bad file can never silence the tool
+  forever.
+
+### Changed
+- **Clicking a notification lands on the right window** (#3). The hooks now pass the session's
+  `cwd`, and the click runs `open -b <bundle> <folder>` instead of merely activating the app —
+  which focuses the window already holding that project. With several projects open you no
+  longer arrive at whichever window happened to be in front.
+  Folders go only to editor bundles: handing a path to a terminal would open a new window
+  rather than focus anything. `NOTIFY_ACTIVATE_PATH=always|never` overrides the guess.
+- "Open in editor" in the approval dialog follows the same route, so it opens the project the
+  permission came from.
+
 ## [1.4.0] — 2026-08-07
 
 ### Fixed

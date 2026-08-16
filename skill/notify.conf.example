@@ -45,3 +45,10 @@
 #NOTIFY_UPDATE_INTERVAL=86400
 # Repositório consultado — troque para acompanhar um fork.
 #NOTIFY_UPDATE_REPO="https://github.com/hallanneves/claude-notifications.git"
+
+# Clique na notificação: abrir a PASTA do projeto no editor (foca a janela certa
+# quando você tem vários projetos abertos) ou só trazer o app para a frente.
+# auto (padrão) = pasta só para editores conhecidos; always | never.
+# Click target: open the project FOLDER in the editor (focuses the right window)
+# or just bring the app forward. auto (default) | always | never.
+#NOTIFY_ACTIVATE_PATH=auto

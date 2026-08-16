@@ -51,6 +51,67 @@ load_lang() {
   NOTIFY_LANG_RESOLVED="$want"
 }
 
+MUTE_FILE="${MUTE_FILE:-$HOME/.claude/skills/notify/.mute-until}"
+
+# Clicking a notification should land on the window you were working in, not
+# just somewhere in the editor. `open -b <bundle> <folder>` focuses the window
+# already holding that folder, which is what makes a click useful when five
+# projects are open.
+#
+# Only editors get the folder: handing a path to a terminal bundle opens a NEW
+# window instead of focusing anything. NOTIFY_ACTIVATE_PATH=always|never
+# overrides the guess.
+should_open_path() {
+  local path="$1" mode="${NOTIFY_ACTIVATE_PATH:-auto}"
+  [ -n "$path" ] || return 1
+  case "$mode" in
+    never)  return 1 ;;
+    always) return 0 ;;
+  esac
+  is_editor_bundle "${NOTIFY_ACTIVATE:-$NOTIFY_ACTIVATE_DEFAULT}"
+}
+
+open_target_cmd() {
+  local bundle="${NOTIFY_ACTIVATE:-$NOTIFY_ACTIVATE_DEFAULT}" path="$1"
+  if should_open_path "$path"; then
+    printf "open -b %s '%s'" "$bundle" "$path"
+  else
+    printf 'open -b %s' "$bundle"
+  fi
+}
+
+is_editor_bundle() {
+  case "$1" in
+    com.microsoft.VSCode*|com.visualstudio.code*|com.todesktop.*|com.exafunction.*\
+      |dev.zed.*|com.sublimetext.*|com.jetbrains.*|com.apple.dt.Xcode)
+      return 0 ;;
+  esac
+  return 1
+}
+
+# Prints the mute deadline ("forever", or an epoch), or nothing when not muted.
+# An expired stamp is cleared here so nothing else has to think about it.
+mute_until() {
+  local raw
+  [ -f "$MUTE_FILE" ] || return 0
+  raw="$(cat "$MUTE_FILE" 2>/dev/null)"
+  case "$raw" in
+    forever) printf 'forever'; return 0 ;;
+    ''|*[!0-9]*) rm -f "$MUTE_FILE"; return 0 ;;
+  esac
+  if [ "$(date +%s)" -ge "$raw" ]; then
+    rm -f "$MUTE_FILE"
+    return 0
+  fi
+  printf '%s' "$raw"
+}
+
+# True while notifications are silenced. Callers must stay silent AND skip any
+# dialog: a modal window is the loudest interruption of all.
+is_muted() {
+  [ -n "$(mute_until)" ]
+}
+
 # Keeps an append-only log from growing forever: past the cap, only the tail
 # is worth reading anyway.
 rotate_log() {

@@ -22,8 +22,9 @@ if front_is_editor; then
   exit 0
 fi
 
-PROJ="$(printf '%s' "$INPUT" | jq -r '.cwd // empty' 2>/dev/null)"
-PROJ="${PROJ##*/}"
+CWD="$(printf '%s' "$INPUT" | jq -r '.cwd // empty' 2>/dev/null)"
+PROJ="${CWD##*/}"
+export NOTIFY_TARGET_PATH="$CWD"
 if [ -n "$PROJ" ]; then
   exec "$DIR/notify.sh" --done "$(say "$L_STOP_DONE_IN" "$PROJ")" "" "$(say "$L_STOP_SUBTITLE" "$PROJ")"
 fi

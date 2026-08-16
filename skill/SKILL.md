@@ -1,6 +1,6 @@
 ---
 name: notify
-description: Native macOS notifications (banner + sound, Slack-style) for Claude Code. Use for /notify, and whenever the user asks to be told when something finishes — "notify me when X is done", "let me know when the build/tests/deploy/CI finishes", "ping me when it's ready", "me avisa/notifica quando X terminar" — for periodic reminders ("remind me every 30 min", "me lembra a cada 30 min"), for periodic work status ("keep me posted", "vai me mandando o status"), to stop active reminders (/notify stop, /notify list), or to check for a new version. Semantic sounds per event type (approval/info/done/failure); Claude icon on the banner; no emojis in messages. Interface strings are bilingual (English/Portuguese).
+description: Native macOS notifications (banner + sound, Slack-style) for Claude Code. Use for /notify, and whenever the user asks to be told when something finishes — "notify me when X is done", "let me know when the build/tests/deploy/CI finishes", "ping me when it's ready", "me avisa/notifica quando X terminar" — for periodic reminders ("remind me every 30 min", "me lembra a cada 30 min"), for periodic work status ("keep me posted", "vai me mandando o status"), to stop active reminders (/notify stop, /notify list), to silence notifications for focused work ("mute notifications", "stop notifying me for an hour", "silencia as notificações", "modo foco") and to turn them back on, or to check for a new version. Semantic sounds per event type (approval/info/done/failure); Claude icon on the banner; no emojis in messages. Interface strings are bilingual (English/Portuguese).
 ---
 
 # notify — native macOS notifications
@@ -11,6 +11,7 @@ Scripts in this directory (`~/.claude/skills/notify/`):
   a banner, now. The type presets a title + sound; an explicit title/sound overrides it.
 - `repeat.sh <seconds> "message" ["title"]` — detached periodic reminder (survives the
   session). `repeat.sh stop` kills them all; `repeat.sh list` lists them.
+- `mute.sh [30m|2h|on|off|status]` — focus mode. Silences banners AND the approval dialog.
 - `check-update.sh [--force]` — is a newer version published? Without `--force` it is
   rate-limited (once a day) and speaks only when there is news; with `--force` it always answers.
 - `update.sh` — installs the newest tag. This is what the banner's click triggers.
@@ -105,12 +106,28 @@ bash ~/.claude/skills/notify/update.sh                 # update now
 - After updating, tell the user the hooks only reload when **Claude Code restarts**.
 - Turn it off with `NOTIFY_UPDATE_CHECK=0` in `notify.conf`.
 
+### 6. Focus mode — "mute for an hour" / "stop notifying me"
+
+```bash
+bash ~/.claude/skills/notify/mute.sh 30m     # 45s, 30m, 2h, 1d; bare number = minutes
+bash ~/.claude/skills/notify/mute.sh on      # until turned off
+bash ~/.claude/skills/notify/mute.sh off
+bash ~/.claude/skills/notify/mute.sh status
+```
+
+- Muting covers banners, reminders, the update notice **and the approval dialog** — while
+  muted, a permission request falls back to the terminal prompt and waits quietly there.
+- Always report back when it ends (or that it lasts until turned off), so nobody is left
+  wondering why approvals stopped popping.
+
 ## Hooks (automatic, no invocation)
 
 Configured in `~/.claude/settings.json`:
 - **Notification** → `notify-hook.sh`: routes on `notification_type`. It stays silent on
   `permission_prompt` when the PermissionRequest hook is wired, because that one already posts
   a banner — otherwise one request means two banners and two sonar sounds.
+- Clicking any notification opens the **project folder** of the session that raised it, so you
+  land on the right editor window (`NOTIFY_ACTIVATE_PATH=never` restores plain app focus).
 - **Stop** → `stop-hook.sh`: "work done" banner at the end of a turn — **suppressed** while
   VSCode/terminal is frontmost (otherwise it fires on every reply). `NOTIFY_FORCE=1` bypasses
   the gate. It also kicks off the rate-limited update check.

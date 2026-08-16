@@ -24,6 +24,10 @@ fi
 
 debug_log notification "type=${TYPE:-<none>} msg=${MSG:0:60}"
 
+# So a click lands on the window of the project that raised it.
+NOTIFY_TARGET_PATH="$(printf '%s' "$INPUT" | jq -r '.cwd // empty' 2>/dev/null)"
+export NOTIFY_TARGET_PATH
+
 case "$TYPE" in
   permission_prompt)
     # A permission prompt raises BOTH this event and PermissionRequest. When

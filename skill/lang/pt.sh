@@ -101,3 +101,9 @@ L_APP_ALLOW3="   'Permitir notificações' e deixe o estilo em Banners ou Alerta
 L_ICON_APPLIED="ícone do Claude aplicado em %s\n"
 L_ICON_SHARED="   Este é o terminal-notifier compartilhado: re-rode após um 'brew upgrade'."
 L_ICON_SHARED2="   Para isolar o ícone só nas notificações do Claude: ./install-notifier-app.sh"
+
+# mute.sh
+L_MUTE_OFF="notificações ligadas"
+L_MUTE_ON_FOREVER="notificações silenciadas até você religar (mute.sh off)"
+L_MUTE_ON_UNTIL="notificações silenciadas até %s (mute.sh off encerra antes)\n"
+L_MUTE_BAD_DURATION="duração inválida: '%s' (use 45s, 30m, 2h, 1d — número puro é minutos)\n"

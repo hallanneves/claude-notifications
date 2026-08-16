@@ -47,8 +47,13 @@ Comportamentos inteligentes:
 - **"Trabalho pronto" sem spam**: o banner de fim de turno é suprimido enquanto o
   editor/terminal está em primeiro plano (você já está vendo o resultado). Saiu pro Slack ou
   navegador? Ele dispara.
-- **Clique útil**: clicar em qualquer notificação foca o VSCode (configurável via
-  `NOTIFY_ACTIVATE=<bundle-id>`).
+- **Clique útil**: clicar numa notificação abre **a janela daquele projeto** no editor — não
+  só o app. Com cinco projetos abertos, você cai no certo. O app é configurável em
+  `NOTIFY_ACTIVATE=<bundle-id>`, e `NOTIFY_ACTIVATE_PATH=never` volta a só focar o app.
+- **Silenciar para focar**: `mute.sh 30m` cala tudo por meia hora — banners, lembretes, aviso
+  de atualização e **também a janela de aprovação**, que é a interrupção mais agressiva de
+  todas. Enquanto silenciado, a permissão cai no prompt normal do terminal, que espera
+  quietinho. O Focus do macOS esconde banners, mas não segura um dialog modal.
 - **Nada de segredo na tela de bloqueio**: o banner de aprovação diz só qual ferramenta o
   Claude quer usar. O comando completo fica na janela, que exige sessão desbloqueada — o
   macOS mostra prévia de notificação com a tela travada. `NOTIFY_BANNER_DETAIL=full` volta ao
@@ -134,6 +139,7 @@ o script precisa ser re-rodado.
   o exit code).
 - *"me lembra a cada 30 minutos de alongar"* — lembrete periódico detached.
 - `/notify list` / `/notify stop` — gerencia lembretes ativos.
+- *"silencia por 1 hora"* / *"pode voltar a notificar"* — modo foco.
 - *"tem versão nova?"* — checa na hora e atualiza se você quiser.
 
 Direto no shell (fora do Claude):
@@ -144,6 +150,9 @@ Direto no shell (fora do Claude):
 ~/.claude/skills/notify/notify.sh "mensagem" "Título" "subtítulo" "Ping"
 ~/.claude/skills/notify/repeat.sh 1800 "alongar!"     # a cada 30 min
 ~/.claude/skills/notify/repeat.sh stop
+~/.claude/skills/notify/mute.sh 30m                   # silêncio por 30 min
+~/.claude/skills/notify/mute.sh off                   # religa
+~/.claude/skills/notify/mute.sh status                # como está agora
 ~/.claude/skills/notify/check-update.sh --force       # tem versão nova?
 ~/.claude/skills/notify/update.sh                     # atualiza agora
 ```
@@ -185,6 +194,7 @@ claude-notifications/
 │   ├── notify-lib.sh       # constantes + helpers compartilhados (bundle, foreground, idioma)
 │   ├── notify.sh           # banner nativo (terminal-notifier ou osascript)
 │   ├── repeat.sh           # lembretes periódicos detached (start/list/stop)
+│   ├── mute.sh             # modo foco: silencia banners e o dialog de aprovação
 │   ├── notify.conf.example # config opcional (idioma, app do clique, timeouts, update)
 │   ├── notify-hook.sh      # hook Notification → roteia por notification_type
 │   ├── stop-hook.sh        # hook Stop → banner "pronto" (suprimido c/ editor em foco)

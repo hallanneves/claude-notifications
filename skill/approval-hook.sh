@@ -16,6 +16,15 @@ INPUT="$(cat)"
 
 front_is_editor && exit 0
 
+# Muted means focused work: no banner, and above all no modal dialog. The
+# permission falls back to Claude Code's terminal prompt, which waits quietly.
+if is_muted; then
+  debug_log approval "suppressed: muted"
+  exit 0
+fi
+
+CWD="$(printf '%s' "$INPUT" | jq -r '.cwd // empty' 2>/dev/null)"
+
 TOOL="$(printf '%s' "$INPUT" | jq -r '.tool_name // empty' 2>/dev/null)"
 [ -n "$TOOL" ] || TOOL="$L_TOOL_FALLBACK"
 
@@ -48,7 +57,7 @@ if [ "${NOTIFY_BANNER_DETAIL:-tool}" = "full" ]; then
 else
   BANNER="$(say "$L_APPROVAL_PROMPT" "$TOOL")"
 fi
-"$DIR/notify.sh" --approval "$BANNER" >/dev/null 2>&1 || true
+NOTIFY_TARGET_PATH="$CWD" "$DIR/notify.sh" --approval "$BANNER" >/dev/null 2>&1 || true
 
 RES="$(run_dialog "$L_APPROVAL_TITLE" "$PROMPT" "$DIR/claude-logo.png" \
   "$L_APPROVAL_BUTTONS" "${NOTIFY_DIALOG_TIMEOUT:-50}")"
@@ -65,7 +74,8 @@ case "$RES" in
       '{hookSpecificOutput:{hookEventName:"PermissionRequest",decision:{behavior:"deny",message:$reason}}}'
     ;;
   editor)
-    open -b "${NOTIFY_ACTIVATE:-$NOTIFY_ACTIVATE_DEFAULT}" 2>/dev/null || true
+    # Land on the window holding THIS project, not just somewhere in the app.
+    eval "$(open_target_cmd "$CWD")" 2>/dev/null || true
     exit 0 ;;
   *)
     # "Fechar"/Esc, timeout, or any failure: no decision, normal prompt.

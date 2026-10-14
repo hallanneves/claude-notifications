@@ -28,37 +28,41 @@ No emojis in messages: visual identity comes from the **Claude icon** on the ban
 
 Smart behaviors:
 
-- **Approval dialog**: when Claude Code is about to ask for permission and your
-  editor/terminal is **not** frontmost (VSCode, Cursor, Zed, Windsurf, iTerm2, Warp,
-  Ghostty…), a native dialog pops to the front carrying the Claude icon and four actions,
-  each with a **keyboard shortcut on the underlined letter**:
+- **Approval dialog**: when Claude Code is about to ask for permission and you are **not
+  looking** (editor/terminal not frontmost, or nobody at the keyboard for over 60s), a native
+  dialog pops to the front carrying the Claude icon, the **project and branch** asking, and
+  four actions:
 
   | Button | Shortcut | Effect |
   |---|---|---|
-  | **A**pprove | `A` | returns `allow` to Claude Code |
+  | Approve | **click only** | returns `allow` to Claude Code |
   | **D**eny | `D` | returns `deny` |
-  | Open in **e**ditor | `E` | focuses the editor and lets you decide there |
+  | **G**o to session | `G` | returns to the session's tab or window and lets you decide there |
   | Close | `Esc` | closes and ignores, deciding nothing |
 
-  Close/Esc, timeout (50s, tunable via `NOTIFY_DIALOG_TIMEOUT`), errors, or "open in editor"
-  fall back to the normal terminal prompt — fail-safe. **Return does nothing**: approving
-  takes a click or the `A` key, never a stray keystroke. Long commands are truncated **with an
-  explicit warning** (never silently — use "open in editor" to see everything), and
-  interaction tools (Claude's own questions) never trigger the dialog.
-- **"Work done" without spam**: the end-of-turn banner is suppressed while your
-  editor/terminal is frontmost (you are already looking at the result). Switched to Slack or
-  the browser? It fires.
-- **A click returns you to where you were**: running in a terminal, it selects the **exact
-  tab** that raised the notification (iTerm2 by session id, Terminal.app by tty). Running as an
-  editor extension, it focuses the **window holding that project** — with five projects open
-  you land on the right one. Editor tabs are not addressable: no editor exposes its windows or
-  tabs to AppleScript. `NOTIFY_ACTIVATE_PATH=never` restores plain app focus.
+  Close/Esc, timeout (50s, tunable via `NOTIFY_DIALOG_TIMEOUT`), errors, or "go to session"
+  fall back to the normal terminal prompt — fail-safe. **No key approves**: the dialog takes
+  focus from wherever you were typing, so approving takes a click, and the other buttons'
+  shortcuts only start working 0.7s after it appears. The command shows **whole and exactly
+  as it will run**, in a scrolling box; invisible characters (control, zero-width, bidi) show
+  up as `⟨U+202E⟩` instead of hiding or reordering text. Claude's own questions and a plan
+  ready for review never open the dialog: they become a "your turn" banner while you are away.
+- **"Work done" without spam**: the end-of-turn banner is suppressed while you are looking:
+  editor/terminal frontmost **and** someone at the keyboard. Switched to Slack or the browser,
+  or left the editor in front and went for coffee (`NOTIFY_AWAY_SECS`, default 60s)? It fires.
+- **A click returns you to where you were, never to another app**: running in a terminal, it
+  selects the **exact tab** that raised the notification (iTerm2 by session id, Terminal.app
+  by tty). Running in an editor, it focuses the **window holding that project**, opened by the
+  workspace root the Claude extension records (opening a subfolder would create a new window).
+  A tab that is gone falls back to the app hosting the session: a Terminal or herdr session
+  never opens VSCode. If macOS denies the Automation permission, you get **one** notice with a
+  click to System Settings. `NOTIFY_ACTIVATE_PATH=never` restores plain app focus.
 - **Mute to focus**: `mute.sh 30m` silences everything for half an hour — banners, reminders,
   the update notice and **the approval dialog too**, which is the most aggressive interruption
   of the lot. While muted, a permission request falls back to the normal terminal prompt,
   which waits quietly. macOS Focus hides banners but does not hold back a modal dialog.
-- **No secrets on the lock screen**: the approval banner names only the tool Claude wants to
-  use. The full command lives in the dialog, which needs an unlocked session — macOS previews
+- **No secrets on the lock screen**: the approval banner names the tool Claude wants to use
+  and Claude's own description of the command, never the command. The full command lives in the dialog, which needs an unlocked session — macOS previews
   notifications while the screen is locked. `NOTIFY_BANNER_DETAIL=full` restores the old
   behaviour.
 - **Periodic reminders**: `repeat.sh` runs detached and survives the end of the session.
@@ -216,7 +220,11 @@ Security notes of the design:
   hooks and never overwrites hooks from other tools; `uninstall.sh` removes **only** hook
   entries pointing at the skill, leaving everything else intact.
 - The `Notification` hook routes on Claude Code's `notification_type` field (permission,
-  waiting, agent finished…), with a keyword fallback for older versions.
+  waiting, agent finished…), with a keyword fallback for older versions. A permission request
+  raises both events: whichever announces it (banner + dialog) leaves a per-session stamp and
+  the other keeps quiet, so it is one banner and one sonar per request. When the dialog did not
+  appear (you were looking, then walked away), `permission_prompt` is the request's only voice
+  and speaks. Unknown types become an informational banner, never the approval sonar.
 
 The foreground gate uses `lsappinfo` (no extra permissions). The decision is returned as
 `hookSpecificOutput.decision.behavior: "allow" | "deny"`; any unexpected path exits 0 with no
@@ -234,6 +242,8 @@ mnemonics. Three details that only surface once you try:
   you answered in two seconds.
 - Underlined titles are applied **after** `alert.layout`: NSAlert rebuilds its buttons'
   titles while laying out and would drop an `attributedTitle` set any earlier.
+- The shortcut grace period is an `NSTimer` added **explicitly** to `NSModalPanelRunLoopMode`,
+  the only mode `runModal`'s loop runs in.
 
 > **Note**: the response format used (`hookSpecificOutput.decision.behavior`) is the currently
 > documented `PermissionRequest` format, and the allow and deny paths were also tested live in
@@ -247,9 +257,13 @@ Create `~/.claude/skills/notify/notify.conf` (a `notify.conf.example` is install
 # Interface language: "en" or "pt". Without this, it follows the macOS locale.
 NOTIFY_LANG="en"
 
-# App focused when clicking a notification (default: VSCode).
-# Find your editor's bundle id: osascript -e 'id of app "Cursor"'
+# App focused when clicking a notification. Default: the app hosting the
+# session (Terminal, iTerm2, VSCode, Cursor…), detected on its own.
+# Find an app's bundle id: osascript -e 'id of app "Cursor"'
 NOTIFY_ACTIVATE="com.todesktop.230313mzl4w4u92"
+
+# Seconds without keyboard or mouse input that count as away (default: 60).
+NOTIFY_AWAY_SECS=60
 
 # Extra apps that suppress the "done" banner and the dialog while frontmost
 NOTIFY_FRONT_APPS="MyEditor,OtherTerminal"

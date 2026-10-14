@@ -22,17 +22,32 @@ SRC="$(brew_bundle)" || {
   exit 1
 }
 
+PB=/usr/libexec/PlistBuddy
+PLIST="$DEDICATED_APP/Contents/Info.plist"
+
+# A click focuses the exact Terminal/iTerm2 tab through Apple Events, and macOS
+# attributes those to this app. The usage string is the text of the Automation
+# permission prompt; without it the request has no explanation, or never shows.
+ensure_events_usage() {
+  "$PB" -c "Print :NSAppleEventsUsageDescription" "$PLIST" >/dev/null 2>&1 && return 1
+  "$PB" -c "Add :NSAppleEventsUsageDescription string $L_APP_EVENTS_USAGE" "$PLIST"
+}
+
 CREATED=0
 if [ -d "$DEDICATED_APP" ] && [ "${1:-}" != "--force" ]; then
   printf 'ℹ️  '; say "$L_APP_EXISTS" "$DEDICATED_APP"
   echo "$L_APP_EXISTS2"
+  # Bundles made by older versions lack the key. Adding it means re-signing
+  # once; set-claude-icon.sh below then leaves the signature alone.
+  if ensure_events_usage; then
+    codesign --force --deep -s - "$DEDICATED_APP"
+    printf '✅ '; say "$L_APP_EVENTS_ADDED" "$DEDICATED_APP"
+  fi
 else
   rm -rf "$DEDICATED_APP"
   mkdir -p "$HOME/Applications"
   cp -R "$SRC" "$DEDICATED_APP"
 
-  PB=/usr/libexec/PlistBuddy
-  PLIST="$DEDICATED_APP/Contents/Info.plist"
   # The distinct bundle id is the whole point: it is what earns a separate entry
   # in System Settings > Notifications instead of inheriting terminal-notifier's
   # (which is the identity macOS refuses to register from inside the keg).
@@ -40,6 +55,7 @@ else
   "$PB" -c "Set :CFBundleName Claude Code" "$PLIST"
   "$PB" -c "Set :CFBundleDisplayName Claude Code" "$PLIST" 2>/dev/null \
     || "$PB" -c "Add :CFBundleDisplayName string Claude Code" "$PLIST"
+  ensure_events_usage || true
   # Editing the plist invalidates the signature — re-sign before anything runs it.
   codesign --force --deep -s - "$DEDICATED_APP"
   printf '✅ '; say "$L_APP_CREATED" "$DEDICATED_APP"

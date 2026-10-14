@@ -64,10 +64,14 @@ if [ -n "$TN" ]; then
     # (or the right project window) has to go through -execute.
     args+=(-execute "$(focus_cmd "${NOTIFY_TARGET_PATH:-}")")
   else
-    # Clicking the notification focuses the editor instead of macOS's blank
-    # Script Editor fallback. Override the target app via NOTIFY_ACTIVATE
-    # (notify.conf or environment).
-    args+=(-activate "${NOTIFY_ACTIVATE:-$NOTIFY_ACTIVATE_DEFAULT}")
+    # Clicking brings back the app hosting this session instead of macOS's
+    # blank Script Editor fallback, and never some other app: with no clue
+    # about the host, a click just dismisses. NOTIFY_ACTIVATE (notify.conf or
+    # environment) overrides.
+    bundle="$(host_bundle)"
+    if [ -n "$bundle" ]; then
+      args+=(-activate "$bundle")
+    fi
   fi
   "$TN" "${args[@]}"
 else

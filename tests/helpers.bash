@@ -14,6 +14,22 @@ common_setup() {
   # Pinned so assertions never depend on the machine's locale; i18n.bats is
   # the suite that varies it on purpose.
   export NOTIFY_LANG=pt
+  # The host is detected from the environment, so the terminal running the
+  # suite must not leak into it: each test states the host it simulates.
+  unset __CFBundleIdentifier TERM_PROGRAM ITERM_SESSION_ID TMUX TMUX_PANE \
+    CLAUDE_CODE_SSE_PORT HERDR_ENV HERDR_PANE_ID HERDR_SOCKET_PATH NOTIFY_ACTIVATE
+  # Nothing in the suite may reach the network. The Stop hook runs the update
+  # check in the background, and a real `git ls-remote` against GitHub posts
+  # its banner through the same stubs, racing whatever the test asserts. Tests
+  # of the update check pass their own fake remote.
+  export NOTIFY_UPDATE_REPO="$WORK/no-remote"
+  # The real idle time is whatever the developer is doing right now; pin it.
+  # FAKE_IDLE_SECS simulates someone away from the keyboard.
+  cat > "$STUB/ioreg" <<'EOF'
+#!/bin/bash
+echo "    |   \"HIDIdleTime\" = $(( ${FAKE_IDLE_SECS:-0} * 1000000000 ))"
+EOF
+  chmod +x "$STUB/ioreg"
 }
 
 common_teardown() {
@@ -76,16 +92,33 @@ EOF
 }
 
 # osascript stub: records argv to $WORK/osascript.calls and prints $OSA_RESULT
-# (the token the real approval-dialog.js would print). OSA_DELAY simulates a
-# user who never answers, so the caller's timeout can be exercised.
+# (the token the real dialog.js would print). OSA_DELAY simulates a user who
+# never answers, so the caller's timeout can be exercised. A script read from
+# stdin (`osascript - args`) goes to $WORK/osascript.scripts, apart from argv,
+# so a test can prove a value travelled as an argument and not inside the code.
+# OSA_ERR makes it fail with that text on stderr, as a refused Apple Event does.
 stub_osascript() {
   cat > "$STUB/osascript" <<EOF
 #!/bin/bash
 printf '%s\n' "\$@" >> "$WORK/osascript.calls"
+[ "\${1:-}" = "-" ] && cat >> "$WORK/osascript.scripts"
+if [ -n "\${OSA_ERR:-}" ]; then
+  printf '%s\n' "\$OSA_ERR" >&2
+  exit 1
+fi
 [ -n "\${OSA_DELAY:-}" ] && sleep "\$OSA_DELAY"
 printf '%s' "\${OSA_RESULT:-}"
 EOF
   chmod +x "$STUB/osascript"
+}
+
+# A Claude Code IDE lock file, as the editor extension writes one per running
+# window group: make_ide_lock <pid> <workspace folder>...
+make_ide_lock() {
+  local pid="$1"; shift
+  mkdir -p "$HOME/.claude/ide"
+  jq -n --argjson pid "$pid" '{pid: $pid, workspaceFolders: $ARGS.positional, ideName: "Visual Studio Code"}' \
+    --args "$@" > "$HOME/.claude/ide/$RANDOM$RANDOM.lock"
 }
 
 # open stub: records argv so tests can assert the editor would be focused.

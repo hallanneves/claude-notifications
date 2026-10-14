@@ -123,30 +123,34 @@ bash ~/.claude/skills/notify/mute.sh status
 ## Hooks (automatic, no invocation)
 
 Configured in `~/.claude/settings.json`:
-- **Notification** → `notify-hook.sh`: routes on `notification_type`. It stays silent on
-  `permission_prompt` when the PermissionRequest hook is wired, because that one already posts
-  a banner — otherwise one request means two banners and two sonar sounds.
-- Clicking any notification returns to where it came from: the exact terminal tab (iTerm2 by
-  session id, Terminal.app by tty) when the host exposes one, otherwise the editor window
-  holding that project folder. Editor TABS are not addressable — no editor exposes windows or
-  tabs to AppleScript — and as an editor extension there is no terminal session to identify at
-  all. `NOTIFY_ACTIVATE_PATH=never` restores plain app focus.
+- **Notification** → `notify-hook.sh`: routes on `notification_type`. On `permission_prompt`
+  it stays silent when approval-hook.sh already announced that session's request (a
+  per-session stamp) — otherwise one request means two banners and two sonar sounds — and
+  speaks when it did not. Unknown types are a plain info banner, never the approval sonar.
+- Clicking any notification returns to where it came from, never to another app: the exact
+  terminal tab (iTerm2 by session id, Terminal.app by tty) when the host exposes one; in an
+  editor, the window holding the project, opened by its workspace root from
+  `~/.claude/ide/*.lock` (a subfolder would open a new window); otherwise the app hosting the
+  session. A refused Automation permission posts one notice. `NOTIFY_ACTIVATE_PATH=never`
+  restores plain app focus.
 - **Stop** → `stop-hook.sh`: "work done" banner at the end of a turn — **suppressed** while
-  VSCode/terminal is frontmost (otherwise it fires on every reply). `NOTIFY_FORCE=1` bypasses
-  the gate. It also kicks off the rate-limited update check.
-- **PermissionRequest** → `approval-hook.sh`: when you are away from the editor, a native
-  dialog (NSAlert via `dialog.js`) with **A**pprove / **D**eny / open in **e**ditor / Close,
-  each letter underlined as its shortcut and **Esc** to close without deciding. It returns the
-  decision to Claude Code (allow and deny confirmed live). Interaction tools (AskUserQuestion
-  etc.) are skipped. Close/Esc, timeout (`NOTIFY_DIALOG_TIMEOUT`, default 50s) and any error
-  fall back to the normal terminal prompt (fail-safe). An already-allowlisted command raises
-  no prompt → the hook never runs (not a bug).
+  the user is watching: editor/terminal frontmost AND input in the last `NOTIFY_AWAY_SECS`
+  (60s). `NOTIFY_FORCE=1` bypasses the gate. It also kicks off the rate-limited update check.
+- **PermissionRequest** → `approval-hook.sh`: when the user is not watching, a native dialog
+  (NSAlert via `dialog.js`) titled with the project and branch, showing the exact command in a
+  scrolling box (control/bidi characters rendered as `⟨U+XXXX⟩`), with Approve (click only —
+  no key ever approves) / **D**eny / **G**o to session / Close (**Esc**). Letter shortcuts arm
+  0.7s after it appears. It returns the decision to Claude Code (allow and deny confirmed
+  live). AskUserQuestion and ExitPlanMode get a "your turn" banner instead of a dialog. Close/
+  Esc, timeout (`NOTIFY_DIALOG_TIMEOUT`, default 50s) and any error fall back to the normal
+  terminal prompt (fail-safe). An already-allowlisted command raises no prompt → the hook
+  never runs (not a bug).
 
 ## Gotchas
 
 - The poster is `~/Applications/Claude Code Notifier.app` (created by the repo's
   `install-notifier-app.sh`): it carries the notification permission and the Claude icon.
-  Clicking a notification focuses VSCode (`NOTIFY_ACTIVATE` changes the bundle id).
+  Clicking a notification focuses the app hosting the session (`NOTIFY_ACTIVATE` overrides).
 - **A notification that "sends" but never appears**: running terminal-notifier straight from
   the Homebrew keg, macOS never asks for permission, accepts the notification (it shows up in
   `-list ALL`) and drops the banner silently — all with `exit 0` and no error anywhere. The
@@ -157,7 +161,8 @@ Configured in `~/.claude/settings.json`:
   command is in the dialog, which needs an unlocked session. `full` restores it in the banner.
 - Optional config in `~/.claude/skills/notify/notify.conf` (see `notify.conf.example`):
   `NOTIFY_LANG`, `NOTIFY_ACTIVATE` (click target), `NOTIFY_FRONT_APPS` (extra apps that
-  suppress the "done" banner and the dialog), `NOTIFY_TN` (the posting binary),
+  suppress the "done" banner and the dialog), `NOTIFY_AWAY_SECS` (idle seconds that count as
+  away), `NOTIFY_TN` (the posting binary),
   `NOTIFY_BANNER_DETAIL`, `NOTIFY_DIALOG_TIMEOUT` and the `NOTIFY_UPDATE_*` trio.
   `repeat.sh` requires a whole interval >= 5s, and `stop` only kills processes carrying the
   `claude-notify-repeat` marker (a recycled PID is never a target).

@@ -27,37 +27,43 @@ Sem emojis nas mensagens: a identificação visual vem do **ícone do Claude** n
 
 Comportamentos inteligentes:
 
-- **Botão de aprovação**: quando o Claude Code vai pedir permissão e o seu editor/terminal
-  **não** está em primeiro plano (VSCode, Cursor, Zed, Windsurf, iTerm2, Warp, Ghostty…),
-  aparece um dialog nativo em primeiro plano, com o ícone do Claude e quatro ações — cada uma
-  com **atalho de teclado na letra sublinhada**:
+- **Janela de aprovação**: quando o Claude Code vai pedir permissão e você **não está
+  olhando** (editor/terminal fora do primeiro plano, ou ninguém no teclado há mais de 60 s),
+  aparece uma janela nativa em primeiro plano, com o ícone do Claude, o **projeto e a branch**
+  que pedem, e quatro ações:
 
   | Botão | Atalho | O que faz |
   |---|---|---|
-  | **A**provar | `A` | devolve `allow` ao Claude Code |
+  | Aprovar | **só clique** | devolve `allow` ao Claude Code |
   | **N**egar | `N` | devolve `deny` |
-  | Abrir no **e**ditor | `E` | foca o editor e deixa você decidir lá |
+  | **I**r para a sessão | `I` | volta para a aba ou janela da sessão e deixa você decidir lá |
   | Fechar (Esc) | `Esc` | fecha e ignora, sem decidir nada |
 
-  Fechar/Esc, timeout (50s, ajustável em `NOTIFY_DIALOG_TIMEOUT`), erro ou "Abrir no editor"
-  caem no prompt normal do terminal — fail-safe. **Enter não faz nada**: aprovar exige um
-  clique ou a tecla `A`, nunca um toque distraído. Comandos longos aparecem truncados **com
-  aviso explícito** (nunca corte silencioso — use "Abrir no editor" para ver tudo), e
-  ferramentas de interação (perguntas do próprio Claude) não geram dialog.
-- **"Trabalho pronto" sem spam**: o banner de fim de turno é suprimido enquanto o
-  editor/terminal está em primeiro plano (você já está vendo o resultado). Saiu pro Slack ou
-  navegador? Ele dispara.
-- **Clique volta para onde você estava**: rodando num terminal, o clique seleciona a **aba
-  exata** que gerou a notificação (iTerm2 pelo id de sessão, Terminal.app pelo tty). Rodando
-  como extensão do editor, foca a **janela daquele projeto** — com cinco projetos abertos você
-  cai no certo. Aba de editor não é endereçável: nenhum editor expõe janelas/abas ao
-  AppleScript. `NOTIFY_ACTIVATE_PATH=never` volta a só focar o app.
+  Fechar/Esc, timeout (50s, ajustável em `NOTIFY_DIALOG_TIMEOUT`), erro ou "Ir para a sessão"
+  caem no prompt normal do terminal — fail-safe. **Nenhuma tecla aprova**: a janela rouba o
+  foco de onde você estava digitando, então aprovar exige um clique, e os atalhos dos outros
+  botões só passam a valer 0,7 s depois de ela aparecer. O comando aparece **inteiro e
+  exatamente como vai rodar**, numa caixa rolável; caracteres invisíveis (controle, largura
+  zero, bidi) aparecem como `⟨U+202E⟩` em vez de esconder ou reordenar o texto.
+  Perguntas do próprio Claude e o plano pronto para revisão não geram janela: viram um banner
+  "sua vez" quando você está fora.
+- **"Trabalho pronto" sem spam**: o banner de fim de turno é suprimido enquanto você está
+  olhando: editor/terminal em primeiro plano **e** alguém no teclado. Saiu pro Slack ou
+  navegador, ou deixou o editor na frente e foi tomar café (`NOTIFY_AWAY_SECS`, padrão 60 s)?
+  Ele dispara.
+- **Clique volta para onde você estava, nunca para outro app**: rodando num terminal, o clique
+  seleciona a **aba exata** que gerou a notificação (iTerm2 pelo id de sessão, Terminal.app
+  pelo tty). Rodando no editor, foca a **janela daquele projeto**, aberta pela raiz do
+  workspace que a extensão do Claude registra (abrir uma subpasta criaria uma janela nova).
+  Aba que sumiu cai no app que hospeda a sessão: uma sessão no Terminal ou no herdr nunca abre
+  o VSCode. Se o macOS negar a permissão de Automação, chega **um** aviso com um clique para os
+  Ajustes. `NOTIFY_ACTIVATE_PATH=never` volta a só focar o app.
 - **Silenciar para focar**: `mute.sh 30m` cala tudo por meia hora — banners, lembretes, aviso
   de atualização e **também a janela de aprovação**, que é a interrupção mais agressiva de
   todas. Enquanto silenciado, a permissão cai no prompt normal do terminal, que espera
   quietinho. O Focus do macOS esconde banners, mas não segura um dialog modal.
-- **Nada de segredo na tela de bloqueio**: o banner de aprovação diz só qual ferramenta o
-  Claude quer usar. O comando completo fica na janela, que exige sessão desbloqueada — o
+- **Nada de segredo na tela de bloqueio**: o banner de aprovação diz qual ferramenta o
+  Claude quer usar e a descrição que ele mesmo escreveu do comando, nunca o comando. O comando completo fica na janela, que exige sessão desbloqueada — o
   macOS mostra prévia de notificação com a tela travada. `NOTIFY_BANNER_DETAIL=full` volta ao
   comportamento antigo.
 - **Lembretes periódicos**: `repeat.sh` roda detached e sobrevive ao fim da sessão.
@@ -216,9 +222,11 @@ Notas de segurança do design:
   hooks e nunca sobrescreve hooks de outras ferramentas; o `uninstall.sh` remove **apenas** as
   entradas de hook que apontam para a skill, preservando qualquer outra intacta.
 - O hook `Notification` roteia pelo campo `notification_type` do Claude Code (permissão,
-  espera, agente concluído…), com fallback por palavra-chave para versões antigas. Ele fica
-  **calado** em `permission_prompt` quando o hook de `PermissionRequest` está ligado: o mesmo
-  pedido dispara os dois eventos, e sem isso você ouviria dois sonares por permissão.
+  espera, agente concluído…), com fallback por palavra-chave para versões antigas. Um pedido de
+  permissão dispara os dois eventos: quem o anuncia (banner + janela) deixa um marcador por
+  sessão e o outro fica calado, então é um banner e um sonar por pedido. Se a janela não
+  apareceu (você estava olhando e depois saiu), o `permission_prompt` é a única voz do pedido e
+  fala. Tipo desconhecido vira banner informativo, nunca sonar de aprovação.
 - O banner de aprovação não inclui o comando por padrão — prévia de notificação aparece na
   tela de bloqueio, e comando carrega segredo. A janela mostra tudo, e ela exige desbloqueio.
 
@@ -237,6 +245,8 @@ detalhes que só aparecem quando se tenta:
   tendo respondido em 2 segundos.
 - Os títulos sublinhados são aplicados **depois** de `alert.layout`: o NSAlert reconstrói os
   títulos dos botões ao fazer layout e descartaria um `attributedTitle` definido antes.
+- A carência dos atalhos é um `NSTimer` adicionado **explicitamente** ao
+  `NSModalPanelRunLoopMode`, o único modo em que o loop do `runModal` roda.
 
 > **Nota**: o formato de resposta usado (`hookSpecificOutput.decision.behavior`) é o formato
 > documentado atual do hook `PermissionRequest`, e os caminhos allow e deny também foram
@@ -250,9 +260,13 @@ Crie `~/.claude/skills/notify/notify.conf` (há um `notify.conf.example` instala
 # Idioma da interface: "en" ou "pt". Sem isto, segue o locale do macOS.
 NOTIFY_LANG="pt"
 
-# App focado ao clicar na notificação (padrão: VSCode).
-# Descubra o bundle id do seu editor: osascript -e 'id of app "Cursor"'
+# App focado ao clicar na notificação. Padrão: o app que hospeda a sessão
+# (Terminal, iTerm2, VSCode, Cursor…), detectado sozinho.
+# Descubra o bundle id de um app: osascript -e 'id of app "Cursor"'
 NOTIFY_ACTIVATE="com.todesktop.230313mzl4w4u92"
+
+# Segundos sem teclado nem mouse para contar como ausente (padrão: 60).
+NOTIFY_AWAY_SECS=60
 
 # Apps extras que suprimem o banner de "pronto" e o dialog quando em foco
 NOTIFY_FRONT_APPS="MeuEditor,OutroTerminal"

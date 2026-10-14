@@ -1,7 +1,8 @@
 #!/bin/bash
 # Stop-hook adapter: "work done" banner when Claude finishes a turn.
-# Suppressed while an editor/terminal is the frontmost app (you can already see
-# the result there); fails open — if the frontmost check errors, it notifies.
+# Suppressed while you are looking at it: an editor/terminal in front AND
+# someone at the keyboard. Left the editor in front and walked away? It fires.
+# Fails open — if the frontmost check errors, it notifies.
 # Set NOTIFY_FORCE=1 to bypass the suppression (used for testing).
 set -uo pipefail
 
@@ -17,8 +18,8 @@ INPUT="$(cat)"
 # are looking at the editor.
 ( "$DIR/check-update.sh" >/dev/null 2>&1 & ) 2>/dev/null
 
-if front_is_editor; then
-  debug_log stop "suppressed: editor is frontmost"
+if is_user_watching; then
+  debug_log stop "suppressed: user is watching"
   exit 0
 fi
 

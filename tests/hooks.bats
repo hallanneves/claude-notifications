@@ -92,20 +92,29 @@ approval() { "$WORK/skill/approval-hook.sh"; }
   [ "$elapsed" -lt 10 ]
 }
 
-@test "approval: Abrir no editor foca o editor e nao decide" {
-  export NOTIFY_FORCE=1 OSA_RESULT="editor"
+@test "approval: Ir para a sessao foca o app da sessao e nao decide" {
+  export NOTIFY_FORCE=1 OSA_RESULT="editor" __CFBundleIdentifier="com.microsoft.VSCode"
   run bash -c 'echo "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"ls\"}}" | "$0"' "$WORK/skill/approval-hook.sh"
   [ "$status" -eq 0 ]
   [ -z "$output" ]
   [[ "$(cat "$WORK/open.calls")" == *"com.microsoft.VSCode"* ]]
 }
 
-@test "approval: comando longo e truncado com aviso explicito" {
+@test "approval: comando longo vai inteiro para a janela, sem truncar" {
   export NOTIFY_FORCE=1 OSA_RESULT="deny"
   long="$(printf 'a%.0s' $(seq 1 400))"
   run bash -c "echo '{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"$long\"}}' | \"\$0\"" "$WORK/skill/approval-hook.sh"
   [ "$status" -eq 0 ]
-  [[ "$(cat "$WORK/osascript.calls")" == *"[TRUNCADO"* ]]
+  [[ "$(cat "$WORK/osascript.calls")" == *"$long"* ]]
+  [[ "$(cat "$WORK/osascript.calls")" != *"TRUNCADO"* ]]
+}
+
+@test "approval: a janela mostra o comando exato, sem trocar aspas nem barras" {
+  # Quem aprova tem que ler byte a byte o que vai rodar.
+  export NOTIFY_FORCE=1 OSA_RESULT="ignore"
+  run bash -c 'jq -cn --arg c "printf \"%s\\n\" C:\\dir" "{tool_name:\"Bash\",tool_input:{command:\$c}}" | "$0"' "$WORK/skill/approval-hook.sh"
+  [ "$status" -eq 0 ]
+  grep -qxF 'printf "%s\n" C:\dir' "$WORK/osascript.calls"
 }
 
 @test "approval: por padrao o banner NAO carrega o comando (tela de bloqueio)" {
@@ -143,7 +152,8 @@ approval() { "$WORK/skill/approval-hook.sh"; }
   [ "$status" -eq 0 ]
   calls="$(cat "$WORK/osascript.calls")"
   [[ "$calls" == *"dialog.js"* ]]
-  [[ "$calls" == *"Aprovar:a:approve"* ]]
+  # Aprovar nao tem atalho: so um clique aprova, nunca uma tecla perdida.
+  [[ "$calls" == *"Aprovar::approve|Negar:n:deny"* ]]
   [[ "$calls" == *"claude-logo.png"* ]]
 }
 
@@ -167,24 +177,32 @@ approval() { "$WORK/skill/approval-hook.sh"; }
 
 # ---- notify-hook -------------------------------------------------------------
 
-@test "notify-hook: permission_prompt cala quando o approval-hook esta ligado" {
-  # Os dois eventos nascem do mesmo pedido: se ambos notificarem, sao dois
-  # banners e dois sonares para uma unica permissao.
+@test "notify-hook: permission_prompt avisa quando o dialogo nao apareceu" {
+  # Com o editor na frente o approval-hook nao abre nada; se o Notification
+  # tambem calasse, a permissao ficaria sem aviso nenhum.
   mkdir -p "$HOME/.claude"
   echo '{"hooks":{"PermissionRequest":[{"hooks":[{"type":"command","command":"~/.claude/skills/notify/approval-hook.sh"}]}]}}' \
     > "$HOME/.claude/settings.json"
-  run bash -c 'echo "{\"notification_type\":\"permission_prompt\",\"message\":\"precisa de permissão\"}" | "$0"' "$WORK/skill/notify-hook.sh"
-  [ "$status" -eq 0 ]
-  [ ! -f "$WORK/notify.calls" ]
-}
-
-@test "notify-hook: permission_prompt notifica quando o approval-hook NAO esta ligado" {
-  mkdir -p "$HOME/.claude"
-  echo '{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"outra-coisa.sh"}]}]}}' \
-    > "$HOME/.claude/settings.json"
-  run bash -c 'echo "{\"notification_type\":\"permission_prompt\",\"message\":\"precisa de permissão\"}" | "$0"' "$WORK/skill/notify-hook.sh"
+  run bash -c 'echo "{\"session_id\":\"s1\",\"notification_type\":\"permission_prompt\",\"message\":\"precisa de permissão\"}" | "$0"' "$WORK/skill/notify-hook.sh"
   [ "$status" -eq 0 ]
   [[ "$(cat "$WORK/notify.calls")" == *--approval* ]]
+}
+
+@test "notify-hook: permission_prompt cala quando o dialogo ja avisou esta sessao" {
+  # O mesmo pedido dispara os dois eventos: um banner e um sonar so.
+  export NOTIFY_FORCE=1 OSA_RESULT="ignore"
+  run bash -c 'echo "{\"session_id\":\"s1\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"ls\"}}" | "$0"' "$WORK/skill/approval-hook.sh"
+  run bash -c 'echo "{\"session_id\":\"s1\",\"notification_type\":\"permission_prompt\",\"message\":\"precisa de permissão\"}" | "$0"' "$WORK/skill/notify-hook.sh"
+  [ "$status" -eq 0 ]
+  [ "$(grep -c -- '--approval' "$WORK/notify.calls")" -eq 1 ]
+}
+
+@test "notify-hook: o aviso de outra sessao nao cala esta" {
+  export NOTIFY_FORCE=1 OSA_RESULT="ignore"
+  run bash -c 'echo "{\"session_id\":\"s1\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"ls\"}}" | "$0"' "$WORK/skill/approval-hook.sh"
+  run bash -c 'echo "{\"session_id\":\"s2\",\"notification_type\":\"permission_prompt\",\"message\":\"precisa de permissão\"}" | "$0"' "$WORK/skill/notify-hook.sh"
+  [ "$status" -eq 0 ]
+  [ "$(grep -c -- '--approval' "$WORK/notify.calls")" -eq 2 ]
 }
 
 @test "notify-hook: permission_prompt vira --approval" {
@@ -217,4 +235,102 @@ approval() { "$WORK/skill/approval-hook.sh"; }
   run bash -c 'echo "{\"message\":\"Claude needs your permission\"}" | "$0"' "$WORK/skill/notify-hook.sh"
   [ "$status" -eq 0 ]
   [[ "$(cat "$WORK/notify.calls")" == *--approval* ]]
+}
+
+# ---- atencao: AFK, perguntas, tipos desconhecidos ----------------------------
+
+@test "approval: editor na frente mas usuario longe do teclado abre o dialogo" {
+  # Saiu para o cafe com o VSCode na frente: o Claude nao pode ficar parado
+  # sem aviso nenhum.
+  export FAKE_FRONT="Code" FAKE_IDLE_SECS=300 OSA_RESULT="ignore"
+  run bash -c 'echo "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"ls\"}}" | "$0"' "$WORK/skill/approval-hook.sh"
+  [ "$status" -eq 0 ]
+  [[ "$(cat "$WORK/osascript.calls")" == *"dialog.js"* ]]
+  [[ "$(cat "$WORK/notify.calls")" == *--approval* ]]
+}
+
+@test "approval: o titulo da janela diz qual projeto pede" {
+  export NOTIFY_FORCE=1 OSA_RESULT="ignore"
+  run bash -c 'echo "{\"cwd\":\"/tmp/projeto-z\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"ls\"}}" | "$0"' "$WORK/skill/approval-hook.sh"
+  [ "$status" -eq 0 ]
+  [[ "$(cat "$WORK/osascript.calls")" == *"Claude quer usar Bash em projeto-z"* ]]
+}
+
+@test "approval: a descricao do comando vai para o banner, o comando nao" {
+  export NOTIFY_FORCE=1 OSA_RESULT="ignore"
+  run bash -c 'echo "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"export TOKEN=x9\",\"description\":\"Roda a suite\"}}" | "$0"' "$WORK/skill/approval-hook.sh"
+  [ "$status" -eq 0 ]
+  banner="$(cat "$WORK/notify.calls")"
+  [[ "$banner" == *"Roda a suite"* ]]
+  [[ "$banner" != *x9* ]]
+}
+
+@test "approval: pergunta do Claude com o usuario fora vira banner, sem dialogo" {
+  export FAKE_FRONT="Slack"
+  run bash -c 'echo "{\"cwd\":\"/tmp/proj-q\",\"tool_name\":\"AskUserQuestion\",\"tool_input\":{\"questions\":[{\"question\":\"Qual banco usar?\"}]}}" | "$0"' "$WORK/skill/approval-hook.sh"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+  [ ! -f "$WORK/osascript.calls" ]
+  calls="$(cat "$WORK/notify.calls")"
+  [[ "$calls" == *"Qual banco usar?"* ]]
+  [[ "$calls" == *"proj-q"* ]]
+}
+
+@test "approval: plano pronto com o usuario fora vira banner com o titulo do plano" {
+  export FAKE_FRONT="Slack"
+  run bash -c 'jq -cn --arg p "$(printf "\n# Migrar para plugin\n\nPassos...")" "{tool_name:\"ExitPlanMode\",tool_input:{plan:\$p}}" | "$0"' "$WORK/skill/approval-hook.sh"
+  [ "$status" -eq 0 ]
+  [ ! -f "$WORK/osascript.calls" ]
+  [[ "$(cat "$WORK/notify.calls")" == *"Migrar para plugin"* ]]
+}
+
+@test "approval: pergunta com o usuario olhando nao gera nada" {
+  export FAKE_FRONT="Code"
+  run bash -c 'echo "{\"tool_name\":\"AskUserQuestion\",\"tool_input\":{}}" | "$0"' "$WORK/skill/approval-hook.sh"
+  [ "$status" -eq 0 ]
+  [ ! -f "$WORK/notify.calls" ]
+}
+
+@test "approval: silenciado nao posta banner nem abre dialogo" {
+  export NOTIFY_FORCE=1 MUTE_FILE="$WORK/mute"
+  echo forever > "$MUTE_FILE"
+  run bash -c 'echo "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"ls\"}}" | "$0"' "$WORK/skill/approval-hook.sh"
+  [ "$status" -eq 0 ]
+  [ ! -f "$WORK/osascript.calls" ]
+  [ ! -f "$WORK/notify.calls" ]
+}
+
+@test "stop: editor na frente mas usuario longe do teclado notifica" {
+  export FAKE_FRONT="Code" FAKE_IDLE_SECS=300
+  run bash -c 'echo "{\"cwd\":\"/tmp/meu-projeto\"}" | "$0"' "$WORK/skill/stop-hook.sh"
+  [ "$status" -eq 0 ]
+  [[ "$(cat "$WORK/notify.calls")" == *--done* ]]
+}
+
+@test "stop: NOTIFY_AWAY_SECS ajusta quando conta como ausente" {
+  export FAKE_FRONT="Code" FAKE_IDLE_SECS=30 NOTIFY_AWAY_SECS=20
+  run bash -c 'echo "{\"cwd\":\"/tmp/meu-projeto\"}" | "$0"' "$WORK/skill/stop-hook.sh"
+  [ "$status" -eq 0 ]
+  [[ "$(cat "$WORK/notify.calls")" == *--done* ]]
+}
+
+@test "stop: um app Electron qualquer nao conta como editor" {
+  export FAKE_FRONT="Electron"
+  run bash -c 'echo "{\"cwd\":\"/tmp/meu-projeto\"}" | "$0"' "$WORK/skill/stop-hook.sh"
+  [ "$status" -eq 0 ]
+  [[ "$(cat "$WORK/notify.calls")" == *--done* ]]
+}
+
+@test "notify-hook: tipo desconhecido vira info, nunca pedido de aprovacao" {
+  run bash -c 'echo "{\"notification_type\":\"quota_auto_resume_fired\",\"message\":\"retomando\"}" | "$0"' "$WORK/skill/notify-hook.sh"
+  [ "$status" -eq 0 ]
+  calls="$(cat "$WORK/notify.calls")"
+  [[ "$calls" == *retomando* ]]
+  [[ "$calls" != *--approval* ]]
+}
+
+@test "notify-hook: elicitation_url_dialog e uma espera, como o elicitation_dialog" {
+  run bash -c 'echo "{\"notification_type\":\"elicitation_url_dialog\",\"message\":\"abra o link\"}" | "$0"' "$WORK/skill/notify-hook.sh"
+  [ "$status" -eq 0 ]
+  [[ "$(cat "$WORK/notify.calls")" == *Submarine* ]]
 }

@@ -7,7 +7,8 @@ setup() {
   common_setup
   copy_skill
   stub_notify   # the reminder loop must never post a real banner
-  PIDFILE="$WORK/skill/.repeat.pids"
+  PIDFILE="$STATE/.repeat.pids"
+  mkdir -p "$STATE"
 }
 
 teardown() {

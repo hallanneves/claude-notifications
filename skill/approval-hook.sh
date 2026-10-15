@@ -25,6 +25,16 @@ PROJ="${CWD##*/}"
 TOOL="$(field '.tool_name')"
 [ -n "$TOOL" ] || TOOL="$L_TOOL_FALLBACK"
 
+# Where this session runs (the attention gate and the click both need it), and
+# one notification group per session.
+detect_origin
+NOTIFY_SESSION="$SESSION"
+export NOTIFY_SESSION
+if [ -n "$SESSION" ]; then
+  NOTIFY_GROUP="$(session_group "$SESSION")"
+  export NOTIFY_GROUP
+fi
+
 # Muted means focused work: no banner, and above all no modal dialog. The
 # permission falls back to Claude Code's terminal prompt, which waits quietly.
 if is_muted; then
@@ -50,7 +60,7 @@ case "$TOOL" in
     fi
     if [ -n "$PROJ" ]; then TITLE="$(say "$L_YOUR_TURN_TITLE" "$PROJ")"; else TITLE="$L_YOUR_TURN_BARE"; fi
     debug_log approval "your turn: tool=$TOOL"
-    mark_announced "$SESSION"
+    stamp announced "$SESSION"
     NOTIFY_TARGET_PATH="$CWD" "$DIR/notify.sh" "$MSG" "$TITLE" "$SUB" "Submarine" >/dev/null 2>&1 || true
     exit 0 ;;
   EnterPlanMode|TodoWrite)
@@ -60,7 +70,7 @@ esac
 # Looking at the session: its own prompt is right there. Drop any stamp left by
 # an earlier request, so the Notification hook still speaks if this one waits.
 if is_user_watching; then
-  clear_announced "$SESSION"
+  unstamp announced "$SESSION"
   exit 0
 fi
 
@@ -92,12 +102,15 @@ debug_log approval "tool=$TOOL detail=${DETAIL:0:80}"
 # the command, and that needs an unlocked session.
 if [ "${NOTIFY_BANNER_DETAIL:-tool}" = "full" ]; then
   BANNER="$TOOL: ${DETAIL:-$L_NO_DETAILS}"
+elif [ -n "$DESC" ]; then
+  BANNER="$DESC"
 else
   BANNER="$(say "$L_APPROVAL_PROMPT" "$TOOL")"
-  [ -n "$DESC" ] && BANNER="$BANNER — $DESC"
 fi
-mark_announced "$SESSION"
-NOTIFY_TARGET_PATH="$CWD" "$DIR/notify.sh" --approval "$BANNER" "" "$PROJ" >/dev/null 2>&1 || true
+# Title: which project. Subtitle: which tool. Body: what it is for.
+if [ -n "$PROJ" ]; then BTITLE="$(say "$L_TITLE_APPROVAL_IN" "$PROJ")"; else BTITLE=""; fi
+stamp announced "$SESSION"
+NOTIFY_TARGET_PATH="$CWD" "$DIR/notify.sh" --approval "$BANNER" "$BTITLE" "$TOOL" >/dev/null 2>&1 || true
 
 RES="$(run_dialog "$HEADLINE" "$DESC" "$DIR/claude-logo.png" \
   "$L_APPROVAL_BUTTONS" "${NOTIFY_DIALOG_TIMEOUT:-50}" "$DETAIL")"

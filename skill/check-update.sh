@@ -21,7 +21,8 @@ FORCE=0
 [ "$FORCE" = 0 ] && [ "${NOTIFY_UPDATE_CHECK:-1}" = "0" ] && exit 0
 command -v git >/dev/null 2>&1 || exit 0
 
-STAMP="$DIR/.update-check"
+mkdir -p "$NOTIFY_STATE_DIR" 2>/dev/null
+STAMP="$NOTIFY_STATE_DIR/.update-check"
 NOW="$(date +%s)"
 
 # The stamp is written before the network call, so a hanging or failing check

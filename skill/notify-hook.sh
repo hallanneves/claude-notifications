@@ -25,9 +25,16 @@ fi
 
 debug_log notification "type=${TYPE:-<none>} msg=${MSG:0:60}"
 
-# So a click lands on the window of the project that raised it.
+# So a click lands on the session that raised it, and every banner of one
+# session replaces the last instead of piling up.
 NOTIFY_TARGET_PATH="$(printf '%s' "$INPUT" | jq -r '.cwd // empty' 2>/dev/null)"
-export NOTIFY_TARGET_PATH
+NOTIFY_SESSION="$SESSION"
+export NOTIFY_TARGET_PATH NOTIFY_SESSION
+if [ -n "$SESSION" ]; then
+  NOTIFY_GROUP="$(session_group "$SESSION")"
+  export NOTIFY_GROUP
+fi
+PROJ="${NOTIFY_TARGET_PATH##*/}"
 
 case "$TYPE" in
   permission_prompt)
@@ -37,12 +44,20 @@ case "$TYPE" in
     # two banners and two sonar sounds for one request. When it did NOT —
     # say you were in front of the editor and then walked away — this is the
     # only voice the request has, so it must speak.
-    if announced_recently "$SESSION" "$(( ${NOTIFY_DIALOG_TIMEOUT:-50} + 30 ))"; then
+    if stamped_within announced "$SESSION" "$(( ${NOTIFY_DIALOG_TIMEOUT:-50} + 30 ))"; then
       exit 0
     fi
-    exec "$DIR/notify.sh" --approval "$MSG" ;;
-  idle_prompt|agent_needs_input|elicitation_dialog|elicitation_url_dialog)
-    exec "$DIR/notify.sh" "$MSG" "$L_WAITING_TITLE" "" "Submarine" ;;
+    exec "$DIR/notify.sh" --approval "$MSG" "" "$PROJ" ;;
+  idle_prompt)
+    # Arrives ~60s after a turn ends with no reply. Right after a "done"
+    # banner for the same session it says nothing new, and while you are
+    # looking at the session it says nothing at all.
+    detect_origin
+    is_user_watching && exit 0
+    stamped_within stopped "$SESSION" 300 && exit 0
+    exec "$DIR/notify.sh" "$MSG" "$L_WAITING_TITLE" "$PROJ" "Submarine" ;;
+  agent_needs_input|elicitation_dialog|elicitation_url_dialog)
+    exec "$DIR/notify.sh" "$MSG" "$L_WAITING_TITLE" "$PROJ" "Submarine" ;;
   agent_completed)
     exec "$DIR/notify.sh" --done "$MSG" ;;
   auth_success|elicitation_complete|elicitation_response)

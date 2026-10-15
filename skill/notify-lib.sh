@@ -13,11 +13,39 @@ DEDICATED_BUNDLE_ID="com.github.hallanneves.claude-notifier"
 # fork. load_notify_conf may reset this, so it is only a default.
 NOTIFY_UPDATE_REPO_DEFAULT="https://github.com/hallanneves/claude-notifications.git"
 
+# Runtime state (mute stamp, reminder pids, per-session stamps, logs) lives
+# outside the code: an install or update replaces the skill directory, and
+# state kept there was lost with it. Inside a Claude Code plugin it goes to the
+# plugin's data dir, which survives updates. NOTIFY_STATE_DIR overrides.
+if [ -z "${NOTIFY_STATE_DIR:-}" ]; then
+  if [ -n "${CLAUDE_PLUGIN_DATA:-}" ]; then
+    NOTIFY_STATE_DIR="$CLAUDE_PLUGIN_DATA"
+  else
+    NOTIFY_STATE_DIR="$HOME/Library/Application Support/claude-notifications"
+  fi
+fi
+MUTE_FILE="${MUTE_FILE:-$NOTIFY_STATE_DIR/.mute-until}"
+
+# Versions up to 1.7 kept their state next to the skill. Moved once, on the
+# first run that finds no state directory, so an active mute or a running
+# reminder survives the upgrade.
+migrate_legacy_state() {
+  local legacy="$HOME/.claude/skills/notify" f
+  mkdir -p "$NOTIFY_STATE_DIR" 2>/dev/null || return 0
+  [ -d "$legacy" ] || return 0
+  for f in "$legacy"/.mute-until "$legacy"/.repeat.pids "$legacy"/.update-check \
+    "$legacy"/.update.log "$legacy"/.debug.log "$legacy"/.announced-* "$legacy"/.tcc-hint-*; do
+    [ -f "$f" ] && mv -n "$f" "$NOTIFY_STATE_DIR/" 2>/dev/null
+  done
+  return 0
+}
+
 # Optional user config, shared by every script that sources this lib.
 load_notify_conf() {
   # shellcheck disable=SC1090,SC1091
   [ -f "$HOME/.claude/skills/notify/notify.conf" ] && . "$HOME/.claude/skills/notify/notify.conf"
   : "${NOTIFY_UPDATE_REPO:=$NOTIFY_UPDATE_REPO_DEFAULT}"
+  [ -d "$NOTIFY_STATE_DIR" ] || migrate_legacy_state
   # After the conf, so NOTIFY_LANG set there wins over the system locale.
   load_lang
   return 0
@@ -47,20 +75,76 @@ load_lang() {
   NOTIFY_LANG_RESOLVED="$want"
 }
 
-# Runtime state: the mute stamp, the per-session "already announced" stamps,
-# the Automation hint stamps. NOTIFY_STATE_DIR moves all of it.
-NOTIFY_STATE_DIR="${NOTIFY_STATE_DIR:-$HOME/.claude/skills/notify}"
-MUTE_FILE="${MUTE_FILE:-$NOTIFY_STATE_DIR/.mute-until}"
+# The bundle id of an .app directory.
+bundle_id_of() {
+  /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$1/Contents/Info.plist" 2>/dev/null
+}
+
+# Walks up from <pid> through a `ps -axo pid=,ppid=,tty=,comm=` table to the
+# nearest thing hosting it, and prints "<kind> <bundle id>". Kinds: herdr and
+# tmux (multiplexers: their servers are daemons, so no app above them),
+# editor-extension (an editor's extension host, e.g. the Claude panel),
+# editor-terminal (an editor's integrated terminal), app (any other app, e.g.
+# Terminal or iTerm2). Prints nothing when the walk finds none of these.
+host_above() {
+  local table="$1" pid="$2" hops=0 line p pp tty comm bundle
+  while [ "$hops" -lt 40 ]; do
+    line="$(printf '%s\n' "$table" | awk -v p="$pid" '$1 == p { print; exit }')"
+    [ -n "$line" ] || return 0
+    read -r p pp tty comm <<< "$line"
+    case "${comm##*/}" in
+      herdr) printf 'herdr '; return 0 ;;
+      tmux*) printf 'tmux '; return 0 ;;
+    esac
+    case "$comm" in
+      *.app/Contents/*)
+        # The outermost bundle: a helper app nests inside its editor's.
+        bundle="$(bundle_id_of "${comm%%.app/*}.app")"
+        case "$comm" in
+          *"Helper (Plugin)"*) printf 'editor-extension %s' "$bundle" ;;
+          *) if is_editor_bundle "$bundle"; then
+               printf 'editor-terminal %s' "$bundle"
+             else
+               printf 'app %s' "$bundle"
+             fi ;;
+        esac
+        return 0 ;;
+    esac
+    [ "$pp" -gt 1 ] 2>/dev/null || return 0
+    pid="$pp"
+    hops=$((hops + 1))
+  done
+}
+
+# Where this session runs, read from the process tree rather than from the
+# environment: multiplexers and terminals leak their variables into everything
+# started inside them (herdr inherits the __CFBundleIdentifier of whatever
+# started its server), but the nearest ancestor is always the truth. Sets
+# ORIGIN_KIND (a host_above kind, or unknown) and ORIGIN_BUNDLE. NOTIFY_PID
+# starts the walk elsewhere (tests).
+detect_origin() {
+  local found
+  found="$(host_above "$(ps -axo pid=,ppid=,tty=,comm= 2>/dev/null)" "${NOTIFY_PID:-$$}")"
+  ORIGIN_KIND="${found%% *}"
+  ORIGIN_BUNDLE="${found#* }"
+  [ -n "$ORIGIN_KIND" ] || ORIGIN_KIND="unknown"
+  ORIGIN_DONE=1
+}
 
 # The app hosting this session: what a click falls back to, so it never lands
 # in an app the session has nothing to do with (it used to be VSCode for
 # everyone, which launched VSCode for a click on a Terminal session).
-# NOTIFY_ACTIVATE (notify.conf or environment) overrides. Otherwise the
-# terminal names itself, and macOS stamps every process an app launches with
-# that app's bundle id. Prints nothing when there is no clue at all.
+# NOTIFY_ACTIVATE (notify.conf or environment) overrides; then the process
+# tree; then the terminal naming itself, and the bundle id macOS stamps on
+# every process an app launches. Prints nothing when there is no clue at all.
 host_bundle() {
   if [ -n "${NOTIFY_ACTIVATE:-}" ]; then
     printf '%s' "$NOTIFY_ACTIVATE"
+    return 0
+  fi
+  [ -n "${ORIGIN_DONE:-}" ] || detect_origin
+  if [ -n "${ORIGIN_BUNDLE:-}" ]; then
+    printf '%s' "$ORIGIN_BUNDLE"
     return 0
   fi
   case "${TERM_PROGRAM:-}" in
@@ -98,26 +182,86 @@ current_tty() {
   esac
 }
 
-# The click action, built while the hook still has the context: which terminal
-# session raised this, which project it was in, and which app hosts it.
+# The herdr CLI. Found from a click too, whose PATH is only /usr/bin:/bin:
+# herdr exports its own path into every pane.
+herdr_bin() {
+  local b
+  for b in "${HERDR_BIN_PATH:-}" "$(command -v herdr 2>/dev/null)" \
+    /opt/homebrew/bin/herdr /usr/local/bin/herdr; do
+    if [ -n "$b" ] && [ -x "$b" ]; then
+      printf '%s' "$b"
+      return 0
+    fi
+  done
+  return 1
+}
+
+# This pane as herdr sees it (JSON), fetched once per hook into
+# HERDR_AGENT_JSON. Empty when herdr cannot be asked.
+herdr_load() {
+  [ -n "${HERDR_AGENT_LOADED:-}" ] && return 0
+  HERDR_AGENT_LOADED=1
+  HERDR_AGENT_JSON=""
+  local bin
+  bin="$(herdr_bin)" || return 0
+  [ -n "${HERDR_PANE_ID:-}" ] || return 0
+  HERDR_AGENT_JSON="$("$bin" agent get "$HERDR_PANE_ID" 2>/dev/null)"
+  return 0
+}
+
+# Whether this pane is the one herdr shows. When herdr cannot say, the answer
+# is yes: the app-level gate already decided, as it did before herdr support.
+herdr_pane_focused() {
+  herdr_load
+  [ -n "$HERDR_AGENT_JSON" ] || return 0
+  printf '%s' "$HERDR_AGENT_JSON" | jq -e '.result.agent.focused == true' >/dev/null 2>&1
+}
+
+# The session's title as herdr shows it (Claude Code sets the terminal title
+# to what the conversation is about). Empty outside herdr.
+herdr_session_title() {
+  [ "${ORIGIN_KIND:-}" = "herdr" ] || return 0
+  herdr_load
+  printf '%s' "$HERDR_AGENT_JSON" | jq -r '.result.agent.terminal_title_stripped // empty' 2>/dev/null
+  return 0
+}
+
+# Everything the click needs, captured while the hook still has it, into the
+# FOCUS_ARGS array. NOTIFY_SESSION is the Claude session id, which finds a
+# herdr pane even after it moved.
+build_focus_args() {
+  FOCUS_ARGS=(--cwd "$1" --kind "${ORIGIN_KIND:-unknown}" --host "$(host_bundle)"
+    --term-program "${TERM_PROGRAM:-}" --iterm "$(iterm_session)" --tty "$(current_tty)")
+  if [ "${ORIGIN_KIND:-}" = "herdr" ]; then
+    FOCUS_ARGS+=(--herdr-bin "$(herdr_bin)" --herdr-socket "${HERDR_SOCKET_PATH:-}"
+      --herdr-pane "${HERDR_PANE_ID:-}" --session "${NOTIFY_SESSION:-}")
+  fi
+}
+
+# The click action as a shell command string (terminal-notifier -execute).
 focus_cmd() {
-  local dir
+  local dir out a
   dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-  printf '%s %s %s %s %s %s' \
-    "$(shq "$dir/focus.sh")" "$(shq "$1")" "$(shq "${TERM_PROGRAM:-}")" \
-    "$(shq "$(iterm_session)")" "$(shq "$(current_tty)")" "$(shq "$(host_bundle)")"
+  build_focus_args "$1"
+  out="$(shq "$dir/focus.sh")"
+  for a in "${FOCUS_ARGS[@]}"; do
+    out="$out $(shq "$a")"
+  done
+  printf '%s' "$out"
 }
 
 # Same thing, run right now instead of baked into a click.
 focus_now() {
   local dir
   dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-  "$dir/focus.sh" "$1" "${TERM_PROGRAM:-}" "$(iterm_session)" "$(current_tty)" "$(host_bundle)"
+  build_focus_args "$1"
+  "$dir/focus.sh" "${FOCUS_ARGS[@]}"
 }
 
-# True when a click has somewhere specific to land: a terminal session we can
-# name, or a project an editor can focus.
+# True when a click has somewhere specific to land: a herdr pane or terminal
+# session we can name, or a project an editor can focus.
 has_focus_target() {
+  [ "${ORIGIN_KIND:-}" = "herdr" ] && return 0
   [ -n "$(iterm_session)" ] && return 0
   [ "${TERM_PROGRAM:-}" = "Apple_Terminal" ] && return 0
   should_open_path "$1"
@@ -211,9 +355,8 @@ rotate_log() {
 # behaviour: one line per call, appended to .debug.log next to the skill.
 debug_log() {
   [ "${NOTIFY_DEBUG:-0}" = "1" ] || return 0
-  local dir file
-  dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-  file="$dir/.debug.log"
+  local file="$NOTIFY_STATE_DIR/.debug.log"
+  mkdir -p "$NOTIFY_STATE_DIR" 2>/dev/null
   rotate_log "$file"
   printf '%s [%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "${1:-?}" "${2:-}" >> "$file"
   return 0
@@ -226,25 +369,39 @@ say() {
   printf "$fmt" "$@"
 }
 
-# Returns 0 when the frontmost app is an editor/terminal. Extend the list via
-# NOTIFY_FRONT_APPS (comma-separated lsappinfo names); NOTIFY_FORCE=1 bypasses
-# the gate entirely (used for testing). Callers want is_user_watching, which
-# also knows when nobody is at the keyboard.
+# The frontmost app: its display name, and its bundle id.
+front_name() {
+  lsappinfo info -only name "$(lsappinfo front 2>/dev/null)" 2>/dev/null \
+    | sed -E 's/.*"(LSDisplayName|name)"="([^"]+)".*/\2/'
+}
+
+front_bundle() {
+  lsappinfo info -only bundleid "$(lsappinfo front 2>/dev/null)" 2>/dev/null \
+    | sed -nE 's/.*"CFBundleIdentifier"="([^"]+)".*/\1/p'
+}
+
+# Apps the user declared as "I am looking at Claude when this is in front"
+# (NOTIFY_FRONT_APPS, comma-separated lsappinfo names).
+front_is_extra() {
+  local front
+  front="$(front_name)"
+  [ -n "$front" ] && [ -n "${NOTIFY_FRONT_APPS:-}" ] || return 1
+  case ",$NOTIFY_FRONT_APPS," in
+    *",$front,"*) return 0 ;;
+  esac
+  return 1
+}
+
+# Returns 0 when the frontmost app is any known editor/terminal: the guess for
+# a session whose own app is unknown. NOTIFY_FORCE=1 bypasses the gate
+# entirely (used for testing). Callers want is_user_watching.
 front_is_editor() {
   [ "${NOTIFY_FORCE:-0}" = "1" ] && return 1
-  local front
-  front="$(lsappinfo info -only name "$(lsappinfo front 2>/dev/null)" 2>/dev/null \
-    | sed -E 's/.*"(LSDisplayName|name)"="([^"]+)".*/\2/')"
-  case "$front" in
+  case "$(front_name)" in
     Code|"Visual Studio Code"|"Code - Insiders"|Cursor|Windsurf|Zed|Terminal|iTerm2|kitty|Ghostty|WezTerm|Alacritty|Warp|Hyper|Tabby)
       return 0 ;;
   esac
-  if [ -n "$front" ] && [ -n "${NOTIFY_FRONT_APPS:-}" ]; then
-    case ",$NOTIFY_FRONT_APPS," in
-      *",$front,"*) return 0 ;;
-    esac
-  fi
-  return 1
+  front_is_extra
 }
 
 # Seconds since the last keyboard or mouse input, from the HID system (needs no
@@ -264,42 +421,125 @@ is_away() {
   [ "$idle" -ge "${NOTIFY_AWAY_SECS:-60}" ] 2>/dev/null
 }
 
-# True when the user is plausibly looking at Claude Code right now: an editor
-# or terminal in front AND someone at the keyboard. "Done" banners and approval
-# dialogs are noise then; the editor left in front during a coffee break is
-# exactly when they matter.
+# Terminals running a herdr client, one "<tty> <bundle id>" line each. The
+# client's tty is its tab's, and its app is what the client descends from:
+# herdr's own environment names whichever terminal happened to start the
+# server, not the one on screen.
+herdr_clients() {
+  local table pid ppid tty comm found
+  table="$(ps -axo pid=,ppid=,tty=,comm= 2>/dev/null)"
+  while read -r pid ppid tty comm; do
+    [ "${comm##*/}" = "herdr" ] && [ -n "$tty" ] && [ "$tty" != "??" ] || continue
+    found="$(host_above "$table" "$ppid")"
+    [ "${found%% *}" = "app" ] && [ -n "${found#* }" ] || continue
+    printf '/dev/%s %s\n' "$tty" "${found#* }"
+  done <<< "$table"
+}
+
+# The app whose window shows this session: the one that must be in front for
+# the user to be looking at it.
+session_app() {
+  local line
+  if [ "${ORIGIN_KIND:-}" = "herdr" ] && [ -z "${NOTIFY_ACTIVATE:-}" ]; then
+    line="$(herdr_clients | head -1)"
+    if [ -n "$line" ]; then
+      printf '%s' "${line#* }"
+      return 0
+    fi
+  fi
+  host_bundle
+}
+
+# True when the user is plausibly looking at THIS session right now: the app
+# showing it in front (any editor or terminal, when that app is unknown), AND
+# someone at the keyboard, AND under herdr this session's pane on screen.
+# "Done" banners and approval dialogs are noise then. VSCode in front while
+# the session runs in Terminal, the editor left in front during a coffee
+# break, another herdr pane in view: that is exactly when they matter.
+# Call detect_origin first.
 is_user_watching() {
+  local app
   [ "${NOTIFY_FORCE:-0}" = "1" ] && return 1
   is_away && return 1
-  front_is_editor
-}
-
-# One permission request raises PermissionRequest (approval-hook.sh) and, after
-# about six seconds of waiting, Notification/permission_prompt (notify-hook.sh).
-# Whichever announces it leaves a per-session stamp, so the other one keeps
-# quiet: one banner and one sonar per request.
-announced_file() {
-  printf '%s/.announced-%s' "$NOTIFY_STATE_DIR" "$(printf '%s' "${1:-unknown}" | tr -c 'A-Za-z0-9_-' '_')"
-}
-
-mark_announced() {
-  mkdir -p "$NOTIFY_STATE_DIR" 2>/dev/null || return 0
-  date +%s > "$(announced_file "$1")" 2>/dev/null || true
-}
-
-clear_announced() {
-  rm -f "$(announced_file "$1")" 2>/dev/null
+  app="$(session_app)"
+  if [ -n "$app" ]; then
+    [ "$(front_bundle)" = "$app" ] || front_is_extra || return 1
+  else
+    front_is_editor || return 1
+  fi
+  if [ "${ORIGIN_KIND:-}" = "herdr" ]; then
+    herdr_pane_focused || return 1
+  fi
   return 0
 }
 
-# usage: announced_recently <session_id> <max_age_secs>
-announced_recently() {
+# A session id made safe for a file name or a notification group.
+safe_id() {
+  printf '%s' "${1:-unknown}" | tr -c 'A-Za-z0-9_-' '_'
+}
+
+# Every notification of one session shares a group, so a new one replaces the
+# last instead of piling up, and answering the session clears it.
+session_group() {
+  printf 'claude-%s' "$(safe_id "$1")"
+}
+
+# Per-session timestamps: usage: stamp <name> <session_id>.
+#   announced  a permission request already got its banner (approval-hook);
+#              PermissionRequest and, after ~6s of waiting, the Notification
+#              hook both see the same request, and only one may speak
+#   turn       when the user last sent a prompt (prompt-hook)
+#   stopped    when the last "done" banner went out (stop-hook)
+stamp_file() {
+  printf '%s/.%s-%s' "$NOTIFY_STATE_DIR" "$1" "$(safe_id "$2")"
+}
+
+stamp() {
+  mkdir -p "$NOTIFY_STATE_DIR" 2>/dev/null || return 0
+  date +%s > "$(stamp_file "$1" "$2")" 2>/dev/null || true
+}
+
+unstamp() {
+  rm -f "$(stamp_file "$1" "$2")" 2>/dev/null
+  return 0
+}
+
+# Seconds since the stamp was taken; nothing when there is none.
+stamp_age() {
   local file at
-  file="$(announced_file "$1")"
-  [ -f "$file" ] || return 1
+  file="$(stamp_file "$1" "$2")"
+  [ -f "$file" ] || return 0
   at="$(cat "$file" 2>/dev/null)"
-  case "$at" in ''|*[!0-9]*) return 1 ;; esac
-  [ $(( $(date +%s) - at )) -lt "${2:-120}" ]
+  case "$at" in ''|*[!0-9]*) return 0 ;; esac
+  printf '%s' "$(( $(date +%s) - at ))"
+}
+
+# usage: stamped_within <name> <session_id> <max_age_secs>
+stamped_within() {
+  local age
+  age="$(stamp_age "$1" "$2")"
+  [ -n "$age" ] && [ "$age" -lt "$3" ]
+}
+
+# The binary that posts: the dedicated app's copy of terminal-notifier when it
+# exists (its own entry in System Settings, and the Claude icon), otherwise
+# terminal-notifier from PATH. NOTIFY_TN overrides. Fails when there is none.
+notifier_bin() {
+  if [ -n "${NOTIFY_TN:-}" ]; then
+    printf '%s' "$NOTIFY_TN"
+    return 0
+  fi
+  if [ -x "$DEDICATED_APP/Contents/MacOS/terminal-notifier" ]; then
+    printf '%s' "$DEDICATED_APP/Contents/MacOS/terminal-notifier"
+    return 0
+  fi
+  command -v terminal-notifier 2>/dev/null
+}
+
+# The first non-blank line of a Markdown answer, as plain text, for a banner.
+first_line() {
+  jq -Rrs 'split("\n") | map(select(test("\\S"))) | (first // "")
+    | sub("^[#>*\\-\\s]+"; "") | gsub("[`*]"; "") | .[0:140]' 2>/dev/null
 }
 
 # Shows a native dialog and prints the chosen token — empty when the user

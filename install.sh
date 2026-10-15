@@ -43,7 +43,7 @@ ensure_backup() {
 }
 
 MANUAL=""
-for EV in Notification Stop PermissionRequest; do
+for EV in Notification Stop PermissionRequest UserPromptSubmit; do
   if ! jq -e --arg ev "$EV" '.hooks[$ev]' "$SETTINGS" >/dev/null 2>&1; then
     ensure_backup
     tmp="$(mktemp)"

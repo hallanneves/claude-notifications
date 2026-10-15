@@ -10,7 +10,8 @@ setup() {
   stub_notify
   restrict_path
   echo "1.2.0" > "$WORK/skill/VERSION"
-  STAMP="$WORK/skill/.update-check"
+  STAMP="$STATE/.update-check"
+  mkdir -p "$STATE"
 }
 
 teardown() { common_teardown; }

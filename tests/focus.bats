@@ -137,7 +137,7 @@ teardown() { common_teardown; }
   [ "$status" -eq 0 ]
   # A citacao tem que sobreviver: o clique roda isso como comando de shell.
   cmd="$(grep -A0 "focus.sh" "$WORK/tn.args" | tail -1)"
-  run bash -c "set -- $cmd; printf '%s' \"\$2\""
+  run bash -c "set -- $cmd; while [ \$# -gt 0 ]; do [ \"\$1\" = --cwd ] && printf '%s' \"\$2\"; shift; done"
   [ "$output" = "/tmp/it's here" ]
 }
 
@@ -167,4 +167,79 @@ teardown() { common_teardown; }
   args="$(cat "$WORK/tn.args")"
   [[ "$args" == *$'-activate\ncom.apple.Terminal'* ]]
   [[ "$args" != *VSCode* ]]
+}
+
+# ---- herdr ---------------------------------------------------------------------
+
+herdr_client_tree() {
+  TERMINAL="$(fake_app Terminal com.apple.Terminal)"
+  fake_ps "200 1 ?? $TERMINAL" "210 200 ttys000 login" "220 210 ttys000 -zsh" "230 220 ttys000 herdr" \
+    "70 1 ?? /opt/homebrew/bin/herdr"
+}
+
+herdr_focus() {
+  run "$WORK/skill/focus.sh" --cwd /tmp/proj --kind herdr --host com.apple.Terminal \
+    --herdr-bin "$STUB/herdr" --herdr-socket /tmp/herdr.sock --herdr-pane "${PANE:-w9:p9}" \
+    --session S1 --report "$WORK/report"
+}
+
+@test "focus: herdr acha o pane pela sessao, foca e levanta a aba do cliente" {
+  # O id do pane muda quando ele e movido; o da sessao do Claude, nao.
+  herdr_client_tree
+  export FAKE_HERDR_LIST='{"result":{"agents":[{"pane_id":"w2:p1","agent_session":{"value":"S1"}}]}}'
+  herdr_focus
+  [ "$status" -eq 0 ]
+  [[ "$(cat "$WORK/herdr.calls")" == *"agent focus w2:p1"* ]]
+  [[ "$(cat "$WORK/osascript.scripts")" == *'tell application "Terminal"'* ]]
+  [[ "$(cat "$WORK/osascript.calls")" == *"/dev/ttys000"* ]]
+  [[ "$(cat "$WORK/report")" == *"herdr-pane w2:p1"* ]]
+  [[ "$(cat "$WORK/report")" == *"terminal-tab com.apple.Terminal /dev/ttys000"* ]]
+  [ ! -f "$WORK/open.calls" ]
+}
+
+@test "focus: herdr sem a sessao na lista usa o pane gravado no clique" {
+  herdr_client_tree
+  export FAKE_HERDR_LIST='{"result":{"agents":[]}}'
+  PANE="w3:p1" herdr_focus
+  [[ "$(cat "$WORK/herdr.calls")" == *"agent focus w3:p1"* ]]
+}
+
+@test "focus: herdr sem cliente anexado so ativa o app do host" {
+  fake_ps "70 1 ?? /opt/homebrew/bin/herdr"
+  herdr_focus
+  [ "$status" -eq 0 ]
+  [ "$(cat "$WORK/open.calls")" = $'-b\ncom.apple.Terminal' ]
+  [ ! -f "$WORK/osascript.calls" ]
+}
+
+@test "focus: herdr com o cliente no iTerm2 foca a sessao pelo tty" {
+  ITERM="$(fake_app iTerm2 com.googlecode.iterm2)"
+  fake_ps "300 1 ?? $ITERM" "310 300 ttys002 login" "320 310 ttys002 -zsh" "330 320 ttys002 herdr"
+  herdr_focus
+  [ "$status" -eq 0 ]
+  scripts="$(cat "$WORK/osascript.scripts")"
+  [[ "$scripts" == *'tell application "iTerm2"'* ]]
+  [[ "$scripts" == *"tty of s"* ]]
+  [[ "$(cat "$WORK/osascript.calls")" == *"/dev/ttys002"* ]]
+}
+
+@test "focus: herdr inacessivel ainda levanta a aba do terminal" {
+  herdr_client_tree
+  export FAKE_HERDR_FOCUS_RC=1
+  herdr_focus
+  [ "$status" -eq 0 ]
+  [[ "$(cat "$WORK/report")" != *"herdr-pane"* ]]
+  [[ "$(cat "$WORK/report")" == *"terminal-tab"* ]]
+}
+
+@test "focus: o clique de uma sessao do herdr leva pane, sessao e socket" {
+  fake_ps "100 90 ttys005 /bin/bash" "90 70 ttys005 claude" "70 1 ?? /opt/homebrew/bin/herdr"
+  NOTIFY_PID=100 HERDR_PANE_ID="w3:p1" HERDR_SOCKET_PATH="/tmp/h.sock" NOTIFY_SESSION="S1" \
+    __CFBundleIdentifier="com.apple.Terminal" NOTIFY_TN="$STUB/tn" run "$WORK/skill/notify.sh" --done "ok"
+  [ "$status" -eq 0 ]
+  args="$(cat "$WORK/tn.args")"
+  [[ "$args" == *"'--kind' 'herdr'"* ]]
+  [[ "$args" == *"'--herdr-pane' 'w3:p1'"* ]]
+  [[ "$args" == *"'--session' 'S1'"* ]]
+  [[ "$args" == *"'--herdr-socket' '/tmp/h.sock'"* ]]
 }

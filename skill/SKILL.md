@@ -15,8 +15,12 @@ Scripts in this directory (`~/.claude/skills/notify/`):
 - `check-update.sh [--force]` — is a newer version published? Without `--force` it is
   rate-limited (once a day) and speaks only when there is news; with `--force` it always answers.
 - `update.sh` — installs the newest tag. This is what the banner's click triggers.
-- `notify-hook.sh` / `stop-hook.sh` / `approval-hook.sh` — hook adapters (Notification /
-  Stop / PermissionRequest) wired in `~/.claude/settings.json`. Not called by the skill.
+- `doctor.sh [--test]` — where this session runs, whether the user counts as "looking", where
+  a click would land, the notifier's health, herdr hints. `--test` posts a banner and reports
+  what the click did. Use it whenever the user asks why something did or did not notify.
+- `notify-hook.sh` / `stop-hook.sh` / `approval-hook.sh` / `prompt-hook.sh` — hook adapters
+  (Notification / Stop / PermissionRequest / UserPromptSubmit) wired in
+  `~/.claude/settings.json`. Not called by the skill.
 
 ## Language
 
@@ -133,9 +137,19 @@ Configured in `~/.claude/settings.json`:
   `~/.claude/ide/*.lock` (a subfolder would open a new window); otherwise the app hosting the
   session. A refused Automation permission posts one notice. `NOTIFY_ACTIVATE_PATH=never`
   restores plain app focus.
-- **Stop** → `stop-hook.sh`: "work done" banner at the end of a turn — **suppressed** while
-  the user is watching: editor/terminal frontmost AND input in the last `NOTIFY_AWAY_SECS`
-  (60s). `NOTIFY_FORCE=1` bypasses the gate. It also kicks off the rate-limited update check.
+- **Stop** → `stop-hook.sh`: "<project> · done" banner at the end of a turn, with the first
+  line of Claude's answer (`NOTIFY_PREVIEW=off` hides it) and Glass, not Hero. **Suppressed**
+  while the user is watching THAT session — the app showing it frontmost (VSCode in front of a
+  Terminal session does not count), input in the last `NOTIFY_AWAY_SECS` (60s), and under
+  herdr its pane on screen — and for turns under `NOTIFY_MIN_TURN_SECS` (30s).
+  `NOTIFY_FORCE=1` bypasses the gate. It also kicks off the rate-limited update check.
+- **UserPromptSubmit** → `prompt-hook.sh` (async): starts the turn clock and removes the
+  session's notifications from Notification Center. Every notification of a session shares a
+  group (`claude-<session_id>`), so a new one replaces the last.
+- Where a session runs is read from the **process tree** (herdr, tmux, an editor's extension
+  host or integrated terminal, or an app), not from environment variables, which multiplexers
+  leak. Under herdr a click focuses the session's pane (looked up by session id) and the
+  Terminal/iTerm2 tab running the herdr client.
 - **PermissionRequest** → `approval-hook.sh`: when the user is not watching, a native dialog
   (NSAlert via `dialog.js`) titled with the project and branch, showing the exact command in a
   scrolling box (control/bidi characters rendered as `⟨U+XXXX⟩`), with Approve (click only —

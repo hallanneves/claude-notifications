@@ -138,12 +138,12 @@ approval() { "$WORK/skill/approval-hook.sh"; }
 @test "debug: NOTIFY_DEBUG=1 registra a decisao, e o padrao nao escreve nada" {
   export NOTIFY_FORCE=1 OSA_RESULT="deny"
   run bash -c 'echo "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"ls\"}}" | "$0"' "$WORK/skill/approval-hook.sh"
-  [ ! -f "$WORK/skill/.debug.log" ]
+  [ ! -f "$STATE/.debug.log" ]
 
   export NOTIFY_DEBUG=1
   run bash -c 'echo "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"ls\"}}" | "$0"' "$WORK/skill/approval-hook.sh"
-  [ -f "$WORK/skill/.debug.log" ]
-  [[ "$(cat "$WORK/skill/.debug.log")" == *"decision=deny"* ]]
+  [ -f "$STATE/.debug.log" ]
+  [[ "$(cat "$STATE/.debug.log")" == *"decision=deny"* ]]
 }
 
 @test "approval: dialog recebe o script e o icone do Claude" {
@@ -212,6 +212,7 @@ approval() { "$WORK/skill/approval-hook.sh"; }
 }
 
 @test "notify-hook: idle_prompt vira banner de espera com Submarine" {
+  export FAKE_FRONT="Slack"
   run bash -c 'echo "{\"notification_type\":\"idle_prompt\",\"message\":\"esperando\"}" | "$0"' "$WORK/skill/notify-hook.sh"
   [ "$status" -eq 0 ]
   calls="$(cat "$WORK/notify.calls")"
@@ -333,4 +334,102 @@ approval() { "$WORK/skill/approval-hook.sh"; }
   run bash -c 'echo "{\"notification_type\":\"elicitation_url_dialog\",\"message\":\"abra o link\"}" | "$0"' "$WORK/skill/notify-hook.sh"
   [ "$status" -eq 0 ]
   [[ "$(cat "$WORK/notify.calls")" == *Submarine* ]]
+}
+
+# ---- turno, conteudo e grupo -----------------------------------------------------
+
+stop_s1() {
+  run bash -c 'jq -cn --arg m "${MSG:-}" "{session_id:\"s1\",cwd:\"/tmp/meu-projeto\",last_assistant_message:\$m}" | "$0"' \
+    "$WORK/skill/stop-hook.sh"
+}
+
+turn_started() {  # turn_started <segundos atras>
+  mkdir -p "$STATE"
+  echo $(( $(date +%s) - $1 )) > "$STATE/.turn-s1"
+}
+
+@test "stop: turno curto nao notifica" {
+  export FAKE_FRONT="Slack"
+  turn_started 5
+  stop_s1
+  [ "$status" -eq 0 ]
+  [ ! -f "$WORK/notify.calls" ]
+}
+
+@test "stop: turno longo notifica" {
+  export FAKE_FRONT="Slack"
+  turn_started 120
+  stop_s1
+  [[ "$(cat "$WORK/notify.calls")" == *--done* ]]
+}
+
+@test "stop: NOTIFY_MIN_TURN_SECS=0 avisa ate turno curto" {
+  export FAKE_FRONT="Slack" NOTIFY_MIN_TURN_SECS=0
+  turn_started 1
+  stop_s1
+  [[ "$(cat "$WORK/notify.calls")" == *--done* ]]
+}
+
+@test "stop: o corpo e a primeira linha da resposta do Claude" {
+  export FAKE_FRONT="Slack" MSG=$'\n## Corrigi o **login** e os testes passaram\n\nDetalhes: ...'
+  stop_s1
+  calls="$(cat "$WORK/notify.calls")"
+  [[ "$calls" == *"Corrigi o login e os testes passaram"* ]]
+  [[ "$calls" != *"Detalhes"* ]]
+  [[ "$calls" != *"##"* ]]
+}
+
+@test "stop: NOTIFY_PREVIEW=off tira a resposta do banner" {
+  export FAKE_FRONT="Slack" NOTIFY_PREVIEW=off MSG="senha nova: hunter2"
+  stop_s1
+  calls="$(cat "$WORK/notify.calls")"
+  [[ "$calls" != *hunter2* ]]
+  [[ "$calls" == *meu-projeto* ]]
+}
+
+@test "stop: titulo diz o projeto, e o som e Glass, nao a fanfarra" {
+  export FAKE_FRONT="Slack"
+  stop_s1
+  calls="$(cat "$WORK/notify.calls")"
+  [[ "$calls" == *"meu-projeto · pronto"* ]]
+  [[ "$calls" == *Glass* ]]
+  [[ "$calls" != *Hero* ]]
+}
+
+@test "stop: a notificacao leva o grupo da sessao" {
+  export FAKE_FRONT="Slack"
+  stop_s1
+  [[ "$(cat "$WORK/notify.calls")" == *"NOTIFY_GROUP=claude-s1"* ]]
+}
+
+@test "prompt-hook: comeca o turno e tira da Central as notificacoes da sessao" {
+  printf '#!/bin/bash\nprintf "%%s\\n" "$@" >> "%s/tn.calls"\n' "$WORK" > "$STUB/tn"
+  chmod +x "$STUB/tn"
+  run bash -c 'echo "{\"session_id\":\"s1\"}" | NOTIFY_TN='"$STUB"'/tn "$0"' "$WORK/skill/prompt-hook.sh"
+  [ "$status" -eq 0 ]
+  [ -f "$STATE/.turn-s1" ]
+  [ "$(cat "$WORK/tn.calls")" = $'-remove\nclaude-s1' ]
+}
+
+@test "prompt-hook: sem sessao nao faz nada" {
+  run bash -c 'echo "{}" | "$0"' "$WORK/skill/prompt-hook.sh"
+  [ "$status" -eq 0 ]
+  [ ! -d "$STATE" ] || [ -z "$(ls -A "$STATE" | grep turn)" ]
+}
+
+@test "notify-hook: idle_prompt logo apos o fim do turno fica quieto" {
+  export FAKE_FRONT="Slack"
+  turn_started 120
+  stop_s1
+  rm -f "$WORK/notify.calls"
+  run bash -c 'echo "{\"session_id\":\"s1\",\"notification_type\":\"idle_prompt\",\"message\":\"esperando\"}" | "$0"' "$WORK/skill/notify-hook.sh"
+  [ "$status" -eq 0 ]
+  [ ! -f "$WORK/notify.calls" ]
+}
+
+@test "notify-hook: idle_prompt com voce olhando fica quieto" {
+  export FAKE_FRONT="Code"
+  run bash -c 'echo "{\"session_id\":\"s2\",\"notification_type\":\"idle_prompt\",\"message\":\"esperando\"}" | "$0"' "$WORK/skill/notify-hook.sh"
+  [ "$status" -eq 0 ]
+  [ ! -f "$WORK/notify.calls" ]
 }

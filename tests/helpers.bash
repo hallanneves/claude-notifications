@@ -17,7 +17,40 @@ common_setup() {
   # The host is detected from the environment, so the terminal running the
   # suite must not leak into it: each test states the host it simulates.
   unset __CFBundleIdentifier TERM_PROGRAM ITERM_SESSION_ID TMUX TMUX_PANE \
-    CLAUDE_CODE_SSE_PORT HERDR_ENV HERDR_PANE_ID HERDR_SOCKET_PATH NOTIFY_ACTIVATE
+    CLAUDE_CODE_SSE_PORT HERDR_ENV HERDR_PANE_ID HERDR_SOCKET_PATH HERDR_BIN_PATH \
+    HERDR_TAB_ID HERDR_WORKSPACE_ID NOTIFY_ACTIVATE NOTIFY_STATE_DIR CLAUDE_PLUGIN_DATA
+  # Where the scripts keep their state under this fake HOME.
+  # shellcheck disable=SC2034  # used by the test files
+  STATE="$HOME/Library/Application Support/claude-notifications"
+  # The process tree comes from a fixture ($WORK/ps.table, see fake_ps), never
+  # from the machine running the suite, which may itself be inside herdr or
+  # tmux. Every other ps call (repeat.sh checks its own pids) is the real one.
+  cat > "$STUB/ps" <<EOF
+#!/bin/bash
+if [ "\$*" = "-axo pid=,ppid=,tty=,comm=" ]; then
+  [ -f "$WORK/ps.table" ] && cat "$WORK/ps.table"
+  exit 0
+fi
+exec /bin/ps "\$@"
+EOF
+  chmod +x "$STUB/ps"
+  # No test may reach the herdr the developer is running: this one only
+  # records. FAKE_HERDR_LIST / FAKE_HERDR_GET are the JSON it answers with.
+  cat > "$STUB/herdr" <<EOF
+#!/bin/bash
+printf '%s\n' "\$*" >> "$WORK/herdr.calls"
+case "\$1 \$2" in
+  "agent list") [ -n "\${FAKE_HERDR_LIST:-}" ] && { printf '%s' "\$FAKE_HERDR_LIST"; exit 0; } ;;
+  "agent get")  [ -n "\${FAKE_HERDR_GET:-}" ] && { printf '%s' "\$FAKE_HERDR_GET"; exit 0; } ;;
+  "agent focus") exit "\${FAKE_HERDR_FOCUS_RC:-0}" ;;
+esac
+echo '{"error":{"code":"agent_not_found"}}' >&2
+exit 1
+EOF
+  chmod +x "$STUB/herdr"
+  # Stubs first even in suites that keep the full PATH (restrict_path narrows
+  # it further): otherwise those would read the real process tree.
+  export PATH="$STUB:$PATH"
   # Nothing in the suite may reach the network. The Stop hook runs the update
   # check in the background, and a real `git ls-remote` against GitHub posts
   # its banner through the same stubs, racing whatever the test asserts. Tests
@@ -60,6 +93,7 @@ stub_notify() {
 #!/bin/bash
 printf '%s\n' "\$@" >> "$WORK/notify.calls"
 printf 'NOTIFY_EXECUTE=%s\n' "\${NOTIFY_EXECUTE:-}" >> "$WORK/notify.calls"
+printf 'NOTIFY_GROUP=%s\n' "\${NOTIFY_GROUP:-}" >> "$WORK/notify.calls"
 printf -- '---\n' >> "$WORK/notify.calls"
 EOF
   chmod +x "$WORK/skill/notify.sh"
@@ -79,16 +113,45 @@ make_fake_remote() {
   printf '%s' "$dir"
 }
 
-# lsappinfo stub: FAKE_FRONT controls the reported frontmost app name.
+# lsappinfo stub: FAKE_FRONT controls the frontmost app's name, and its bundle
+# id follows from it (FAKE_FRONT_BUNDLE overrides).
 stub_lsappinfo() {
   cat > "$STUB/lsappinfo" <<'EOF'
 #!/bin/bash
 case "${1:-}" in
   front) echo 'ASN:0x0-0x1:' ;;
-  info)  echo "\"LSDisplayName\"=\"${FAKE_FRONT:-Code}\"" ;;
+  info)
+    case "$*" in
+      *bundleid*)
+        case "${FAKE_FRONT:-Code}" in
+          Code)     b="com.microsoft.VSCode" ;;
+          Terminal) b="com.apple.Terminal" ;;
+          iTerm2)   b="com.googlecode.iterm2" ;;
+          Slack)    b="com.tinyspeck.slackmacgap" ;;
+          *)        b="com.example.${FAKE_FRONT:-x}" ;;
+        esac
+        echo "\"CFBundleIdentifier\"=\"${FAKE_FRONT_BUNDLE:-$b}\"" ;;
+      *) echo "\"LSDisplayName\"=\"${FAKE_FRONT:-Code}\"" ;;
+    esac ;;
 esac
 EOF
   chmod +x "$STUB/lsappinfo"
+}
+
+# A fake .app with a real Info.plist: fake_app <Name> <bundle id>. Prints the
+# path of its executable, as ps would show it.
+fake_app() {
+  local app="$WORK/apps/$1.app"
+  mkdir -p "$app/Contents/MacOS"
+  printf '<?xml version="1.0" encoding="UTF-8"?>\n<plist version="1.0"><dict><key>CFBundleIdentifier</key><string>%s</string></dict></plist>\n' \
+    "$2" > "$app/Contents/Info.plist"
+  printf '%s' "$app/Contents/MacOS/$1"
+}
+
+# The process table detect_origin and herdr_clients read: one
+# "pid ppid tty comm" line per process. Tests start the walk at NOTIFY_PID.
+fake_ps() {
+  printf '%s\n' "$@" > "$WORK/ps.table"
 }
 
 # osascript stub: records argv to $WORK/osascript.calls and prints $OSA_RESULT

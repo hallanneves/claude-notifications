@@ -3,6 +3,45 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.8.0] — 2026-10-15
+
+Per-session focus, starting with herdr, and a banner worth reading.
+
+### Added
+- **herdr**: a click focuses the session's **exact pane** — looked up by Claude session id,
+  so a pane that moved is still found — and brings forward the Terminal or iTerm2 tab running
+  the herdr client. "Go to session" in the approval dialog does the same.
+- **`doctor.sh`** (`--test` too): where the session runs, whether you count as looking and
+  why, where a click would land, the notifier's health, denied Automation permissions, and
+  herdr's duplicate sound. `--test` posts a banner and reports what the click actually did.
+- **`UserPromptSubmit` hook** (`prompt-hook.sh`, async): answering a session removes its
+  notifications from Notification Center and starts the turn clock.
+- **One notification per session**: all of a session's banners share a group, so a new one
+  replaces the last instead of piling up.
+- The "done" banner says what happened: `<project> · done`, the branch (and the herdr
+  session title) as subtitle, and the first line of Claude's answer (`last_assistant_message`)
+  as body. `NOTIFY_PREVIEW=off` keeps the answer off it.
+- `NOTIFY_MIN_TURN_SECS` (default 30): quick turns make no noise.
+- Per-event sounds (`NOTIFY_SOUND_TURN`, `_APPROVAL`, `_DONE`, `_FAIL`, `_INFO`), and `none`
+  to silence one — an empty sound used to fall back to the preset.
+
+### Fixed
+- **"Looking at it" meant "any editor or terminal in front"**: with VSCode in front, a session
+  running in Terminal or herdr never notified. The app showing **that** session must be in
+  front now and, under herdr, its pane on screen.
+- The session's origin comes from the **process tree**, not from environment variables:
+  herdr and tmux leak the variables of whatever terminal started their server, and a
+  `code .` run from a pane carried herdr's variables into VSCode.
+- `idle_prompt` no longer repeats a "done" banner the same session got minutes before, and
+  stays quiet while you look at the session.
+- The approval banner reads `<project> · approval`, with the tool as subtitle.
+
+### Changed
+- End-of-turn banners use Glass; Hero is kept for jobs you asked to hear about.
+- Runtime state moved out of the skill directory (which every install replaces) to
+  `~/Library/Application Support/claude-notifications` (`NOTIFY_STATE_DIR`), migrated once
+  on the first run; an active mute or a running reminder survives it. `uninstall.sh` removes it.
+
 ## [1.7.0] — 2026-10-14
 
 Critical fixes from a review of how the tool behaves outside "one VSCode window". No new

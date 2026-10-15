@@ -22,7 +22,7 @@ if [ -f "$SETTINGS" ] && command -v jq >/dev/null 2>&1; then
           .hooks[$ev] |= map(select(tostring | contains("/skills/notify/") | not))
           | if (.hooks[$ev] | length) == 0 then del(.hooks[$ev]) else . end
         else . end;
-      strip("Notification") | strip("Stop") | strip("PermissionRequest")
+      strip("Notification") | strip("Stop") | strip("PermissionRequest") | strip("UserPromptSubmit")
       | if .hooks == {} then del(.hooks) else . end
     ' "$SETTINGS" > "$tmp"
     jq -e . "$tmp" >/dev/null
@@ -41,6 +41,13 @@ fi
 if [ -d "$HOME/.claude/skills/notify" ]; then
   rm -rf "$HOME/.claude/skills/notify"
   echo "✅ $L_UNI_SKILL_REMOVED"
+fi
+
+# Runtime state (mute stamp, reminder pids, logs): only the default location,
+# never a directory someone pointed NOTIFY_STATE_DIR at.
+STATE_DEFAULT="$HOME/Library/Application Support/claude-notifications"
+if [ -d "$STATE_DEFAULT" ]; then
+  rm -rf "$STATE_DEFAULT"
 fi
 
 if [ -d "$DEDICATED_APP" ]; then

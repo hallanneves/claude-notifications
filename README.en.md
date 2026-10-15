@@ -20,7 +20,8 @@ are away from the editor.
 |---|---|---|---|
 | Claude needs approval | Approval needed | Submarine (sonar) | `Notification` hook + `PermissionRequest` dialog |
 | Notification you asked for | Claude Code | Glass (ding) | `/notify` skill |
-| Work finished | Work finished | Hero (fanfare) | `Stop` hook + `/notify` on jobs |
+| Turn finished (you are away) | `<project> · done` | Glass (ding) | `Stop` hook |
+| A job you asked to hear about | Work finished | Hero (fanfare) | `/notify` on jobs |
 | Something failed | Something failed | Basso (low thud) | `/notify` on jobs |
 
 No emojis in messages: visual identity comes from the **Claude icon** on the banner
@@ -47,12 +48,21 @@ Smart behaviors:
   as it will run**, in a scrolling box; invisible characters (control, zero-width, bidi) show
   up as `⟨U+202E⟩` instead of hiding or reordering text. Claude's own questions and a plan
   ready for review never open the dialog: they become a "your turn" banner while you are away.
-- **"Work done" without spam**: the end-of-turn banner is suppressed while you are looking:
-  editor/terminal frontmost **and** someone at the keyboard. Switched to Slack or the browser,
-  or left the editor in front and went for coffee (`NOTIFY_AWAY_SECS`, default 60s)? It fires.
-- **A click returns you to where you were, never to another app**: running in a terminal, it
-  selects the **exact tab** that raised the notification (iTerm2 by session id, Terminal.app
-  by tty). Running in an editor, it focuses the **window holding that project**, opened by the
+- **"Done" only when it matters**: the end-of-turn banner stays quiet while you are looking
+  **at that session**: the app showing it in front (Terminal for a Terminal session; VSCode in
+  front does not count), someone at the keyboard and, under herdr, its pane on screen.
+  Switched to Slack, sitting in another pane, or left it all in front and went for coffee
+  (`NOTIFY_AWAY_SECS`, default 60s)? It fires. Short turns (under 30s, `NOTIFY_MIN_TURN_SECS`)
+  make no noise.
+- **The banner says what happened**: the project in the title (`claude-notifications ·
+  done`), the branch and, under herdr, the session's title as subtitle, and the first line of
+  Claude's answer as the body. `NOTIFY_PREVIEW=off` keeps the answer off the banner.
+- **One notification per session**: each notice replaces the session's previous one, and
+  answering the session clears its notices from Notification Center.
+- **A click returns you to where you were, never to another app**: under **herdr**, the click
+  focuses the session's **exact pane** (found by session id, even after the pane moved) and
+  brings forward the Terminal or iTerm2 tab herdr runs in. In a terminal, it selects the
+  **exact tab** that raised the notification (iTerm2 by session id, Terminal.app by tty). Running in an editor, it focuses the **window holding that project**, opened by the
   workspace root the Claude extension records (opening a subfolder would create a new window).
   A tab that is gone falls back to the app hosting the session: a Terminal or herdr session
   never opens VSCode. If macOS denies the Automation permission, you get **one** notice with a
@@ -87,7 +97,9 @@ brew install terminal-notifier   # recommended (icon + useful click)
 The installer:
 
 1. Copies the skill to `~/.claude/skills/notify/` (applies to **all** projects).
-2. Adds the `Notification`, `Stop` and `PermissionRequest` hooks to `~/.claude/settings.json`,
+2. Adds the `Notification`, `Stop`, `PermissionRequest` and `UserPromptSubmit` hooks (the last
+   one async: it clears the notices of the session you answered and times the turn) to
+   `~/.claude/settings.json`,
    **per event**: free events are added, events already pointing at the skill are recognized
    and left alone (re-running the installer is safe — that is how you update), and events
    holding hooks **from other tools** are never overwritten — it asks for a manual merge with
@@ -160,6 +172,8 @@ Straight from the shell (outside Claude):
 ~/.claude/skills/notify/mute.sh 30m                   # silence for 30 min
 ~/.claude/skills/notify/mute.sh off                   # unmute
 ~/.claude/skills/notify/mute.sh status                # current state
+~/.claude/skills/notify/doctor.sh                     # why it notified (or not), and where a click goes
+~/.claude/skills/notify/doctor.sh --test              # posts a banner; click it to see what the click did
 ~/.claude/skills/notify/check-update.sh --force       # any new version?
 ~/.claude/skills/notify/update.sh                     # update now
 ```
@@ -203,7 +217,9 @@ claude-notifications/
 │   ├── mute.sh             # focus mode: silences banners and the approval dialog
 │   ├── notify.conf.example # optional config (language, click target, timeouts, update)
 │   ├── notify-hook.sh      # Notification hook → routes by notification_type
-│   ├── stop-hook.sh        # Stop hook → "done" banner (suppressed with editor focused)
+│   ├── stop-hook.sh        # Stop hook → "done" banner (quiet while you look at the session)
+│   ├── prompt-hook.sh      # UserPromptSubmit hook → clears the session's notices, times the turn
+│   ├── doctor.sh           # diagnostics: origin, gate, click target, notifier, herdr
 │   ├── approval-hook.sh    # PermissionRequest hook → Approve/Deny dialog
 │   ├── dialog.js           # generic NSAlert (underlined shortcuts + Claude icon)
 │   ├── check-update.sh     # is there a newer version? (rate-limited, clickable banner)
@@ -264,6 +280,17 @@ NOTIFY_ACTIVATE="com.todesktop.230313mzl4w4u92"
 
 # Seconds without keyboard or mouse input that count as away (default: 60).
 NOTIFY_AWAY_SECS=60
+
+# Turns shorter than this post no "done" banner (default: 30; 0 = always).
+NOTIFY_MIN_TURN_SECS=30
+
+# "off" keeps the first line of Claude's answer off the banner (lock screen).
+NOTIFY_PREVIEW=on
+
+# Each event's sound. "none" silences it. End of turn: Glass. Presets:
+# Submarine, Hero, Basso, Glass.
+NOTIFY_SOUND_TURN=Glass
+NOTIFY_SOUND_DONE=Hero
 
 # Extra apps that suppress the "done" banner and the dialog while frontmost
 NOTIFY_FRONT_APPS="MyEditor,OtherTerminal"

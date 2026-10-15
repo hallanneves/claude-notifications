@@ -13,13 +13,18 @@ setup() {
 
 teardown() { common_teardown; }
 
-@test "instalacao do zero adiciona os 3 hooks e a skill" {
+@test "instalacao do zero adiciona os 4 hooks e a skill" {
   run "$WORK/repo/install.sh"
   [ "$status" -eq 0 ]
   [[ "$output" == *"hook Notification adicionado"* ]]
   [[ "$output" == *"hook Stop adicionado"* ]]
   [[ "$output" == *"hook PermissionRequest adicionado"* ]]
-  for ev in Notification Stop PermissionRequest; do
+  [[ "$output" == *"hook UserPromptSubmit adicionado"* ]]
+  [ -x "$HOME/.claude/skills/notify/prompt-hook.sh" ]
+  [ -x "$HOME/.claude/skills/notify/doctor.sh" ]
+  # O UserPromptSubmit nunca pode atrasar o prompt.
+  [ "$(jq '.hooks.UserPromptSubmit[0].hooks[0].async' "$SETTINGS")" = "true" ]
+  for ev in Notification Stop PermissionRequest UserPromptSubmit; do
     [ "$(jq --arg ev "$ev" '.hooks[$ev] | tostring | contains("/skills/notify/")' "$SETTINGS")" = "true" ]
   done
   [ -x "$HOME/.claude/skills/notify/notify.sh" ]
@@ -73,11 +78,28 @@ teardown() { common_teardown; }
   [ ! -d "$HOME/.claude/skills/notify" ]
   [ "$(jq '.hooks | has("Notification")' "$SETTINGS")" = "false" ]
   [ "$(jq '.hooks | has("PermissionRequest")' "$SETTINGS")" = "false" ]
+  [ "$(jq '.hooks | has("UserPromptSubmit")' "$SETTINGS")" = "false" ]
   [ "$(jq -r '.hooks.Stop[0].hooks[0].command' "$SETTINGS")" = "other-tool.sh" ]
+  # O estado (silencio, lembretes, logs) sai junto.
+  [ ! -d "$STATE" ]
   [ "$(jq -r '.hooks.PreToolUse[0].hooks[0].command' "$SETTINGS")" = "linter.sh" ]
 }
 
 @test "uninstall num sistema limpo nao falha" {
   run "$WORK/repo/uninstall.sh"
   [ "$status" -eq 0 ]
+}
+
+@test "instalacao migra o estado da versao antiga e preserva o silencio" {
+  # Ate a 1.7 o estado morava ao lado da skill; reinstalar trocava o diretorio.
+  mkdir -p "$HOME/.claude/skills/notify"
+  echo forever > "$HOME/.claude/skills/notify/.mute-until"
+  echo "123 x" > "$HOME/.claude/skills/notify/.repeat.pids"
+  run "$WORK/repo/install.sh"
+  [ "$status" -eq 0 ]
+  [ "$(cat "$STATE/.mute-until")" = "forever" ]
+  [ "$(cat "$STATE/.repeat.pids")" = "123 x" ]
+  [ ! -f "$HOME/.claude/skills/notify/.mute-until" ]
+  run "$HOME/.claude/skills/notify/mute.sh" status
+  [[ "$output" == *"silenciadas"* ]]
 }

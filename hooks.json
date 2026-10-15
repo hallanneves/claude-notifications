@@ -32,6 +32,17 @@
           }
         ]
       }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$HOME/.claude/skills/notify/prompt-hook.sh\"",
+            "async": true
+          }
+        ]
+      }
     ]
   }
 }

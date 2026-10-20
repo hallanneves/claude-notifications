@@ -1,0 +1,25 @@
+{
+  "name": "claude-notify-bridge",
+  "displayName": "Claude Notify Bridge",
+  "description": "Lets claude-notifications bring a click back to the exact Claude Code tab or terminal a notification came from.",
+  "version": "1.0.0",
+  "publisher": "hallanneves",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/hallanneves/claude-notifications"
+  },
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "extensionKind": [
+    "ui"
+  ],
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./extension.js"
+}

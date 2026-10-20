@@ -17,7 +17,8 @@ DIR="$(cd "$(dirname "$0")" && pwd)"
 . "$DIR/notify-lib.sh"
 load_notify_conf
 
-LOG="$DIR/.update.log"
+mkdir -p "$NOTIFY_STATE_DIR" 2>/dev/null
+LOG="$NOTIFY_STATE_DIR/.update.log"
 rotate_log "$LOG"
 TMP=""
 trap '[ -n "$TMP" ] && rm -rf "$TMP"' EXIT
@@ -74,7 +75,7 @@ AFTER="$(cat "$DIR/VERSION" 2>/dev/null)"
 case "$AFTER" in '') AFTER="?" ;; esac
 
 # The check stamp is stale now: a fresh install should be free to look again.
-rm -f "$DIR/.update-check"
+rm -f "$NOTIFY_STATE_DIR/.update-check"
 
 if [ "$BEFORE" = "$AFTER" ]; then
   MSG="$(say "$L_UPD_SAME" "$AFTER")"

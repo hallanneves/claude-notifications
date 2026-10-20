@@ -3,6 +3,141 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.9.1] — 2026-10-20
+
+### Fixed
+- **The approval panel ignored every click and key.** Its event loop asked Cocoa for
+  `NSEventMaskAny`, which is `NSUIntegerMax`: JXA rounds that to 2^63, a mask no event
+  matches, so the buttons, the close box and the shortcuts were all dead and the dialog only
+  ever ended by timing out (back to the terminal's own prompt). The 1.9.0 check pressed the
+  button with `performClick`, which skips the event queue. `dialog.js --simulate` now drives
+  the real panel, fully transparent, with clicks and keys through that same queue, and the
+  suite covers every button and shortcut.
+- **N, I and Esc did nothing after clicking into the panel**: the command box became first
+  responder and swallowed the letter. Shortcuts are matched in the event loop now, and a click
+  anywhere on the panel hands it the keyboard. Before that click, keys still go to your app.
+
+## [1.9.0] — 2026-10-20
+
+The exact VSCode tab, and an approval dialog that leaves your keyboard alone. Closes #3.
+
+### Added
+- **VSCode bridge extension** (`vscode-bridge/`, installed by `install.sh` into `code` and
+  `cursor` when present, only when its version changed; `NOTIFY_BRIDGE=0` skips it). A click,
+  or "Go to session", now reveals the session's **Claude tab** — or the **integrated
+  terminal** running Claude — in the window that owns the session. Each window publishes a
+  small registry and listens on its own Unix socket; the click picks the window by process
+  ancestry (the session descends from that window's extension host or one of its terminals'
+  shells) and asks only it. A `vscode://` URL could not do this: it goes to whichever window
+  was active last, where the Claude extension would open a second panel resuming a session
+  still running elsewhere. Packaged as a `.vsix` with `zip`, so installing needs neither node
+  nor vsce.
+- **"Always approve: <rule>"** in the approval dialog, when Claude Code offers
+  `permission_suggestions`: the suggestion is returned verbatim as `updatedPermissions`,
+  exactly the terminal's "don't ask again".
+- **One dialog at a time**: parallel sessions queue (up to `NOTIFY_DIALOG_QUEUE_SECS`, 30s)
+  instead of stacking modal windows; a lock left by a dead process is taken over.
+- **The dialog closes itself** when you look at the session again; its own prompt takes over.
+
+### Changed
+- **The approval dialog no longer takes the keyboard.** It is a floating, non-activating
+  panel: the app you were typing in keeps the keyboard, and you decide with a click. Letter
+  shortcuts work only after you click into the panel. Measured live before shipping: the
+  frontmost app does not change, osascript never becomes active, the panel never becomes key.
+  The update dialog uses the same panel.
+
+## [1.8.0] — 2026-10-15
+
+Per-session focus, starting with herdr, and a banner worth reading.
+
+### Added
+- **herdr**: a click focuses the session's **exact pane** — looked up by Claude session id,
+  so a pane that moved is still found — and brings forward the Terminal or iTerm2 tab running
+  the herdr client. "Go to session" in the approval dialog does the same.
+- **`doctor.sh`** (`--test` too): where the session runs, whether you count as looking and
+  why, where a click would land, the notifier's health, denied Automation permissions, and
+  herdr's duplicate sound. `--test` posts a banner and reports what the click actually did.
+- **`UserPromptSubmit` hook** (`prompt-hook.sh`, async): answering a session removes its
+  notifications from Notification Center and starts the turn clock.
+- **One notification per session**: all of a session's banners share a group, so a new one
+  replaces the last instead of piling up.
+- The "done" banner says what happened: `<project> · done`, the branch (and the herdr
+  session title) as subtitle, and the first line of Claude's answer (`last_assistant_message`)
+  as body. `NOTIFY_PREVIEW=off` keeps the answer off it.
+- `NOTIFY_MIN_TURN_SECS` (default 30): quick turns make no noise.
+- Per-event sounds (`NOTIFY_SOUND_TURN`, `_APPROVAL`, `_DONE`, `_FAIL`, `_INFO`), and `none`
+  to silence one — an empty sound used to fall back to the preset.
+
+### Fixed
+- **"Looking at it" meant "any editor or terminal in front"**: with VSCode in front, a session
+  running in Terminal or herdr never notified. The app showing **that** session must be in
+  front now and, under herdr, its pane on screen.
+- The session's origin comes from the **process tree**, not from environment variables:
+  herdr and tmux leak the variables of whatever terminal started their server, and a
+  `code .` run from a pane carried herdr's variables into VSCode.
+- `idle_prompt` no longer repeats a "done" banner the same session got minutes before, and
+  stays quiet while you look at the session.
+- The approval banner reads `<project> · approval`, with the tool as subtitle.
+
+### Changed
+- End-of-turn banners use Glass; Hero is kept for jobs you asked to hear about.
+- Runtime state moved out of the skill directory (which every install replaces) to
+  `~/Library/Application Support/claude-notifications` (`NOTIFY_STATE_DIR`), migrated once
+  on the first run; an active mute or a running reminder survives it. `uninstall.sh` removes it.
+
+## [1.7.0] — 2026-10-14
+
+Critical fixes from a review of how the tool behaves outside "one VSCode window". No new
+architecture yet: that comes with per-session focus (herdr panes, VSCode tabs) next.
+
+### Security
+- **The approval dialog showed a different command from the one that would run.** It replaced
+  `"` with `'` and `\` with `/`, and cut at 350 characters. It now shows the command byte for
+  byte, whole, in a scrolling monospaced box, with control, zero-width and bidi characters
+  rendered as a visible `⟨U+XXXX⟩` so they can neither hide nor reorder text.
+- **A stray keystroke could approve a command.** The dialog takes keyboard focus from the app
+  you are typing in, and `a` approved. Approve now has no shortcut at all: only a click. The
+  other shortcuts arm 0.7s after the dialog appears.
+- `focus.sh` no longer `eval`s a command built from the session's folder (a `'` in the path
+  broke it, and could inject), and AppleScript receives values as arguments instead of having
+  them spliced into its source.
+
+### Fixed
+- **A permission request could raise no notification at all**: with the editor in front, the
+  approval hook skipped its banner, and the Notification hook stayed silent because the
+  approval hook was installed. The Notification hook now goes quiet only when the approval
+  hook actually announced that session's request.
+- **"Looking at it" now also means "at the keyboard"**: the editor left in front during a
+  coffee break no longer swallows the "done" banner and the approval dialog
+  (`NOTIFY_AWAY_SECS`, default 60).
+- **A click never opens an app the session has nothing to do with.** The default target was
+  VSCode for everyone: a click on a Terminal or herdr session launched VSCode, as did a
+  Terminal tab that had closed or an Automation permission that was denied. The target is now
+  the app hosting the session (`NOTIFY_ACTIVATE` still overrides).
+- In an editor, the click opens the **workspace root** recorded by the Claude extension
+  instead of the session's folder, which created a new window whenever Claude ran in a
+  subfolder or worktree.
+- `ITERM_SESSION_ID` inherited inside tmux/herdr no longer points the click at an unrelated
+  iTerm2 tab.
+- A Claude question (`AskUserQuestion`) or a plan ready for review (`ExitPlanMode`) while you
+  are away now posts a "your turn" banner; before, both were silent.
+- Unknown notification types (`quota_auto_resume_*`…) post an info banner instead of the
+  approval sonar. `elicitation_url_dialog` is treated as a wait, like `elicitation_dialog`.
+- A generic `Electron` app in front no longer counts as an editor.
+
+### Added
+- The approval dialog names the **project and branch** asking, and its banner carries Claude's
+  description of the command (never the command itself).
+- A denied Automation permission posts **one** notice whose click opens System Settings →
+  Privacy & Security → Automation, instead of failing silently.
+- The notifier app declares `NSAppleEventsUsageDescription` (added once to existing bundles).
+
+### Changed
+- "Open in editor" is now **"Go to session"**: it was wrong for terminal users.
+- Re-running the installer no longer re-signs the notifier app when its icon is unchanged:
+  every ad-hoc re-sign changes the bundle's hash, and macOS may forget permissions granted
+  to it.
+
 ## [1.6.0] — 2026-08-16
 
 ### Added

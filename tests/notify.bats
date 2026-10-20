@@ -80,3 +80,21 @@ tn_args() { cat "$WORK/tn.args"; }
   calls="$(cat "$WORK/osascript.calls")"
   [[ "$calls" == *'display notification "msg com \"aspas\" e \\barra"'* ]]
 }
+
+@test "NOTIFY_GROUP vira -group: uma notificacao viva por sessao" {
+  NOTIFY_GROUP="claude-s1" NOTIFY_TN="$STUB/tn" run "$WORK/skill/notify.sh" --done "ok"
+  [ "$status" -eq 0 ]
+  [[ "$(tn_args)" == *$'-group\nclaude-s1'* ]]
+}
+
+@test "som none sai sem som nenhum" {
+  NOTIFY_TN="$STUB/tn" run "$WORK/skill/notify.sh" --done "ok" "" "" none
+  [ "$status" -eq 0 ]
+  [[ "$(tn_args)" != *-sound* ]]
+  [ -z "$(echo "$output" | grep -i aviso)" ]
+}
+
+@test "NOTIFY_SOUND_DONE troca o som do preset" {
+  NOTIFY_SOUND_DONE="Ping" NOTIFY_TN="$STUB/tn" run "$WORK/skill/notify.sh" --done "ok"
+  [[ "$(tn_args)" == *$'-sound\nPing'* ]]
+}

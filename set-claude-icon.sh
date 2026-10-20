@@ -29,12 +29,23 @@ iconutil -c icns "$WORK/claude.iconset" -o "$WORK/icon.icns"
 
 ICNS_NAME="$(defaults read "$APP/Contents/Info" CFBundleIconFile 2>/dev/null || echo Terminal)"
 ICNS_NAME="${ICNS_NAME%.icns}.icns"
+
+# Same icon already in a validly signed bundle: stop here. Every ad-hoc
+# re-sign changes the bundle's hash, and macOS may then forget permissions it
+# had granted the app (notifications, Automation). The icns build is
+# deterministic, so a byte compare is enough.
+if cmp -s "$WORK/icon.icns" "$APP/Contents/Resources/$ICNS_NAME" \
+  && codesign -v "$APP" >/dev/null 2>&1; then
+  printf '✅ '; say "$L_ICON_UNCHANGED" "$APP"
+  exit 0
+fi
+
 cp "$WORK/icon.icns" "$APP/Contents/Resources/$ICNS_NAME"
 # Touching bundle contents invalidates the signature; without re-signing macOS
 # treats the app as tampered with.
 codesign --force --deep -s - "$APP"
 touch "$APP"
-/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$APP"
+"${LSREGISTER:-/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister}" -f "$APP"
 killall NotificationCenter 2>/dev/null || true
 
 printf '✅ '; say "$L_ICON_APPLIED" "$APP"

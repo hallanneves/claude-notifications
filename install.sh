@@ -43,7 +43,7 @@ ensure_backup() {
 }
 
 MANUAL=""
-for EV in Notification Stop PermissionRequest; do
+for EV in Notification Stop PermissionRequest UserPromptSubmit; do
   if ! jq -e --arg ev "$EV" '.hooks[$ev]' "$SETTINGS" >/dev/null 2>&1; then
     ensure_backup
     tmp="$(mktemp)"
@@ -70,6 +70,35 @@ if command -v terminal-notifier >/dev/null 2>&1; then
 else
   echo "ℹ️  $L_INS_TN_HINT"
   echo "$L_INS_TN_HINT2"
+fi
+
+# The editor bridge (vscode-bridge/): what lets a click reach the exact Claude
+# tab or integrated terminal instead of just the project's window. Installed
+# into each editor whose CLI is on PATH, and only when its version changed.
+# NOTIFY_BRIDGE=0 skips it.
+install_bridge() {
+  local cli="$1" want have tmp
+  command -v "$cli" >/dev/null 2>&1 || return 0
+  want="hallanneves.claude-notify-bridge@$(jq -r .version vscode-bridge/package.json)"
+  have="$("$cli" --list-extensions --show-versions 2>/dev/null \
+    | grep -i '^hallanneves\.claude-notify-bridge@' || true)"
+  if [ "$(printf '%s' "$have" | tr '[:upper:]' '[:lower:]')" = "$want" ]; then
+    printf '✅ '; say "$L_INS_BRIDGE_PRESENT" "$cli"
+    return 0
+  fi
+  tmp="$(mktemp -d)"
+  if ./vscode-bridge/build-vsix.sh "$tmp/claude-notify-bridge.vsix" \
+    && "$cli" --install-extension "$tmp/claude-notify-bridge.vsix" --force >/dev/null 2>&1; then
+    printf '✅ '; say "$L_INS_BRIDGE_OK" "$cli"
+    echo "$L_INS_BRIDGE_RELOAD"
+  else
+    printf '⚠️  '; say "$L_INS_BRIDGE_FAIL" "$cli"
+  fi
+  rm -rf "$tmp"
+}
+if [ "${NOTIFY_BRIDGE:-1}" != "0" ]; then
+  install_bridge code
+  install_bridge cursor
 fi
 
 echo

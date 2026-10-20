@@ -10,7 +10,8 @@ setup() {
   stub_notify
   restrict_path
   echo "1.2.0" > "$WORK/skill/VERSION"
-  STAMP="$WORK/skill/.update-check"
+  STAMP="$STATE/.update-check"
+  mkdir -p "$STATE"
 }
 
 teardown() { common_teardown; }
@@ -157,7 +158,9 @@ EOF
 
 @test "update: Ver no GitHub abre o navegador e nao instala" {
   setup_update_dialog
-  OSA_RESULT="github" run "$WORK/skill/update.sh"
+  # A pagina de releases sai da URL do remoto (o git aqui e stub: sem rede).
+  NOTIFY_UPDATE_REPO="https://github.com/hallanneves/claude-notifications.git" \
+    OSA_RESULT="github" run "$WORK/skill/update.sh"
   [ "$status" -eq 0 ]
   [ ! -f "$WORK/installer.calls" ]
   [[ "$(cat "$WORK/open.calls")" == *"github.com/hallanneves/claude-notifications/releases"* ]]

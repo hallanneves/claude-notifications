@@ -10,7 +10,8 @@ DIR="$(cd "$(dirname "$0")" && pwd)"
 . "$DIR/notify-lib.sh"
 load_notify_conf
 
-PIDFILE="$DIR/.repeat.pids"
+mkdir -p "$NOTIFY_STATE_DIR"
+PIDFILE="$NOTIFY_STATE_DIR/.repeat.pids"
 MARKER="claude-notify-repeat"
 
 # A pidfile entry may outlive the process (reboot recycles PIDs), so never act

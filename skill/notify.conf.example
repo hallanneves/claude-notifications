@@ -8,9 +8,37 @@
 # and falls back to English when there is no catalogue.
 #NOTIFY_LANG="pt"
 
-# Bundle id do app focado ao clicar numa notificação (padrão: VSCode).
-# Descubra o do seu editor com: osascript -e 'id of app "NomeDoApp"'
+# Bundle id do app focado ao clicar numa notificação. Padrão: o app que hospeda
+# a sessão (Terminal, iTerm2, VSCode, Cursor…), detectado sozinho.
+# Click target app. Default: the app hosting the session, detected on its own.
+# Descubra o de um app com: osascript -e 'id of app "NomeDoApp"'
 #NOTIFY_ACTIVATE="com.todesktop.230313mzl4w4u92"   # exemplo: Cursor
+
+# Segundos sem teclado nem mouse para contar como ausente: aí o banner de
+# "pronto" e o dialog de aprovação saem mesmo com o editor na frente (padrão: 60).
+# Seconds without keyboard/mouse input that count as away (default: 60).
+#NOTIFY_AWAY_SECS=60
+
+# Turnos mais curtos que isto não geram o banner de "pronto" (padrão: 30;
+# 0 = sempre avisa). Turns shorter than this post no "done" banner.
+#NOTIFY_MIN_TURN_SECS=30
+
+# "off" tira do banner de "pronto" a primeira linha da resposta do Claude, que
+# o macOS pode mostrar na tela de bloqueio.
+# "off" keeps the first line of Claude's answer off the "done" banner.
+#NOTIFY_PREVIEW=on
+
+# Sons por evento; "none" silencia. Sounds per event; "none" silences it.
+# Mantenha o significado: Hero é só sucesso, Basso só falha.
+#NOTIFY_SOUND_TURN=Glass       # fim de turno (hook Stop)
+#NOTIFY_SOUND_APPROVAL=Submarine
+#NOTIFY_SOUND_DONE=Hero        # /notify --done
+#NOTIFY_SOUND_FAIL=Basso       # /notify --fail
+#NOTIFY_SOUND_INFO=Glass
+
+# Onde fica o estado (silêncio, lembretes, logs). Padrão:
+# ~/Library/Application Support/claude-notifications
+#NOTIFY_STATE_DIR="$HOME/Library/Application Support/claude-notifications"
 
 # Apps extras (separados por vírgula, nome exato do processo via lsappinfo) que,
 # quando em primeiro plano, suprimem o banner de "trabalho pronto" e o dialog de

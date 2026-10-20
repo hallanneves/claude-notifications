@@ -96,7 +96,7 @@ EOF
   run bash -c 'echo "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"ls\"}}" | "$0"' "$WORK/skill/approval-hook.sh"
   [ "$status" -eq 0 ]
   calls="$(cat "$WORK/osascript.calls")"
-  [[ "$calls" == *"Approve:a:approve|Deny:d:deny"* ]]
+  [[ "$calls" == *"Approve::approve|Deny:d:deny"* ]]
   [[ "$calls" == *"Claude wants to use: Bash"* ]]
   [ "$(echo "$output" | jq -r '.hookSpecificOutput.decision.behavior')" = "deny" ]
   [[ "$(echo "$output" | jq -r '.hookSpecificOutput.decision.message')" == *"Denied by"* ]]

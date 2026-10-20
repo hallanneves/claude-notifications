@@ -22,7 +22,7 @@ if [ -f "$SETTINGS" ] && command -v jq >/dev/null 2>&1; then
           .hooks[$ev] |= map(select(tostring | contains("/skills/notify/") | not))
           | if (.hooks[$ev] | length) == 0 then del(.hooks[$ev]) else . end
         else . end;
-      strip("Notification") | strip("Stop") | strip("PermissionRequest")
+      strip("Notification") | strip("Stop") | strip("PermissionRequest") | strip("UserPromptSubmit")
       | if .hooks == {} then del(.hooks) else . end
     ' "$SETTINGS" > "$tmp"
     jq -e . "$tmp" >/dev/null
@@ -42,6 +42,22 @@ if [ -d "$HOME/.claude/skills/notify" ]; then
   rm -rf "$HOME/.claude/skills/notify"
   echo "✅ $L_UNI_SKILL_REMOVED"
 fi
+
+# Runtime state (mute stamp, reminder pids, logs): only the default location,
+# never a directory someone pointed NOTIFY_STATE_DIR at.
+STATE_DEFAULT="$HOME/Library/Application Support/claude-notifications"
+if [ -d "$STATE_DEFAULT" ]; then
+  rm -rf "$STATE_DEFAULT"
+fi
+
+# The editor bridge, from every editor that has it.
+for cli in code cursor; do
+  command -v "$cli" >/dev/null 2>&1 || continue
+  if "$cli" --list-extensions 2>/dev/null | grep -qi '^hallanneves\.claude-notify-bridge$'; then
+    "$cli" --uninstall-extension hallanneves.claude-notify-bridge >/dev/null 2>&1 \
+      && { printf '✅ '; say "$L_UNI_BRIDGE_REMOVED" "$cli"; }
+  fi
+done
 
 if [ -d "$DEDICATED_APP" ]; then
   rm -rf "$DEDICATED_APP"

@@ -63,3 +63,12 @@ jxa() { /usr/bin/osascript -l JavaScript "$WORK/skill/dialog.js" "$@"; }
     [ "$key" = "" ] || { echo "$lang da atalho '$key' ao Aprovar"; return 1; }
   done
 }
+
+@test "dialog: rotulo com dois-pontos (regra do Aprovar sempre) nao quebra os botoes" {
+  run jxa --parse-buttons "Aprovar::approve|Aprovar sempre: Bash(npm test:*)::always|Negar:n:deny"
+  [ "$status" -eq 0 ]
+  [ "$(echo "$output" | jq -r '.[1].label')" = "Aprovar sempre: Bash(npm test:*)" ]
+  [ "$(echo "$output" | jq -r '.[1].token')" = "always" ]
+  [ "$(echo "$output" | jq -r '.[1].keyEquivalent')" = "" ]
+  [ "$(echo "$output" | jq -r '.[2].token')" = "deny" ]
+}

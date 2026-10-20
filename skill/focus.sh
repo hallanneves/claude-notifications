@@ -4,7 +4,7 @@
 # usage: focus.sh --cwd DIR --kind KIND --host BUNDLE [--term-program NAME]
 #                 [--iterm SESSION_ID] [--tty TTY] [--herdr-bin PATH]
 #                 [--herdr-socket PATH] [--herdr-pane ID] [--session ID]
-#                 [--report FILE]
+#                 [--pids "PID PID ..."] [--report FILE]
 #        focus.sh <cwd> <term_program> <iterm_session_id> <tty> [host_bundle]
 #                 (the form clicks posted before 1.8 still carry)
 #
@@ -14,6 +14,9 @@
 # Most specific first, and never an app other than the one hosting the session:
 #   - herdr: the session's pane, found by its Claude session id, then the
 #     terminal tab running the herdr client.
+#   - An editor with the bridge extension (vscode-bridge/): the window owning
+#     the session, found by process ancestry (--pids), and in it the Claude
+#     tab (--session) or the integrated terminal running Claude.
 #   - iTerm2 / Terminal.app: the exact tab, matched by session id or tty.
 #   - An editor (VSCode, Cursor, Zed…): the WINDOW holding the project, by its
 #     workspace root (see editor_root in notify-lib.sh).
@@ -27,7 +30,7 @@ DIR="$(cd "$(dirname "$0")" && pwd)"
 load_notify_conf
 
 CWD="" KIND="" HOST="" TERM_PROG="" ITERM_ID="" TTY_PATH=""
-HERDR_BIN="" HERDR_SOCK="" HERDR_PANE="" SESSION="" REPORT=""
+HERDR_BIN="" HERDR_SOCK="" HERDR_PANE="" SESSION="" REPORT="" PIDS=""
 
 if [ "${1:-}" = "${1#--}" ]; then
   CWD="${1:-}" TERM_PROG="${2:-}" ITERM_ID="${3:-}" TTY_PATH="${4:-}" HOST="${5:-}"
@@ -44,6 +47,7 @@ else
       --herdr-socket) HERDR_SOCK="$2" ;;
       --herdr-pane)   HERDR_PANE="$2" ;;
       --session)      SESSION="$2" ;;
+      --pids)         PIDS="$2" ;;
       --report)       REPORT="$2" ;;
     esac
     shift 2
@@ -228,6 +232,33 @@ raise_herdr_client() {
   return 1
 }
 
+# The exact Claude tab or integrated terminal, asked of the one window that
+# owns the session (bridge_window) over its own socket. That window is raised
+# first by its own workspace, which `open` focuses rather than duplicates.
+focus_editor_session() {
+  local owner socket open_path request reply
+  [ -n "$PIDS" ] && [ -n "$HOST" ] || return 1
+  owner="$(bridge_window "$PIDS")" || return 1
+  socket="$(printf '%s' "$owner" | jq -r '.socket // empty')"
+  open_path="$(printf '%s' "$owner" | jq -r '.openPath // empty')"
+  [ -n "$socket" ] || return 1
+  if [ "$KIND" = "editor-terminal" ]; then
+    request="$(jq -cn --arg pids "$PIDS" \
+      '{cmd: "show-terminal", pids: ($pids | split(" ") | map(select(length > 0) | tonumber))}')"
+  else
+    [ -n "$SESSION" ] || return 1
+    request="$(jq -cn --arg s "$SESSION" '{cmd: "reveal-session", session: $s}')"
+  fi
+  if [ -n "$open_path" ]; then
+    open -b "$HOST" "$open_path" 2>/dev/null
+  else
+    open -b "$HOST" 2>/dev/null
+  fi
+  reply="$(printf '%s\n' "$request" | nc -U -w 2 "$socket" 2>/dev/null)"
+  printf '%s' "$reply" | jq -e '.ok == true' >/dev/null 2>&1 || return 1
+  report "editor-$(printf '%s' "$reply" | jq -r '.did') $open_path"
+}
+
 # One level up, and never another app: the window holding the project when the
 # host is an editor, otherwise the host app itself.
 activate_host() {
@@ -252,6 +283,13 @@ if [ "$KIND" = "herdr" ]; then
   activate_host 2>/dev/null || true
   exit 0
 fi
+
+case "$KIND" in
+  editor-extension|editor-terminal)
+    focus_editor_session && exit 0
+    activate_host 2>/dev/null || true
+    exit 0 ;;
+esac
 
 if [ -n "$ITERM_ID" ] && try_tab iTerm2 focus_iterm "$ITERM_ID"; then
   report "iterm-session $ITERM_ID"

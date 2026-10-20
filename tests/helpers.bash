@@ -84,6 +84,7 @@ copy_repo() {
   cp "$REPO/install.sh" "$REPO/uninstall.sh" "$REPO/hooks.json" "$REPO/VERSION" "$WORK/repo/"
   cp -R "$REPO/skill" "$WORK/repo/skill"
   cp -R "$REPO/assets" "$WORK/repo/assets"
+  cp -R "$REPO/vscode-bridge" "$WORK/repo/vscode-bridge"
 }
 
 # Replace the copied notify.sh with a recorder: argv goes to $WORK/notify.calls
@@ -114,10 +115,15 @@ make_fake_remote() {
 }
 
 # lsappinfo stub: FAKE_FRONT controls the frontmost app's name, and its bundle
-# id follows from it (FAKE_FRONT_BUNDLE overrides).
+# id follows from it (FAKE_FRONT_BUNDLE overrides). FAKE_FRONT_FILE, when it
+# exists, wins and is re-read on every call: the user switching apps while a
+# dialog is open.
 stub_lsappinfo() {
   cat > "$STUB/lsappinfo" <<'EOF'
 #!/bin/bash
+if [ -n "${FAKE_FRONT_FILE:-}" ] && [ -f "$FAKE_FRONT_FILE" ]; then
+  FAKE_FRONT="$(cat "$FAKE_FRONT_FILE")"
+fi
 case "${1:-}" in
   front) echo 'ASN:0x0-0x1:' ;;
   info)

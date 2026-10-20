@@ -1,8 +1,15 @@
-// Native NSAlert used by the skill's dialogs (approval, update).
+// The native dialog used by the skill (approval, update): a floating panel
+// that does NOT take the keyboard.
 //
-// Why not AppleScript's `display dialog`: it caps at three buttons, and has
-// neither per-button key equivalents nor underlined mnemonics. NSAlert has all
-// three.
+// Why a non-activating panel and not NSAlert: an alert activates its app and
+// becomes the key window, so whatever you were typing in Slack lands in it,
+// and a stray letter can press a button. This panel floats above every window
+// (and every Space) while the app you were using keeps the keyboard; you
+// decide with a click. Letter shortcuts work only after you click into the
+// panel yourself. Approve never has one.
+//
+// Why not AppleScript's `display dialog`: three buttons at most, and no
+// per-button shortcuts.
 //
 // usage: osascript -l JavaScript dialog.js <title> <body> <icon> <buttons> [detail]
 //   <buttons> is "Label:key:token|Label:key:token|..." where key is a single
@@ -10,20 +17,33 @@
 //   empty for a button that only a click can press.
 //   <detail> is shown verbatim in a scrollable monospaced box under the body.
 //
-// Prints exactly one token on stdout. Anything else (crash, kill, unknown
-// response) means "no answer" and the caller must treat it as a no-op. The
-// caller also owns the timeout: an NSTimer scheduled in the default mode
-// never fires inside runModal, whose loop runs in NSModalPanelRunLoopMode.
+// Prints exactly one token on stdout. Anything else (closed, killed, crashed)
+// means "no answer" and the caller must treat it as a no-op. The caller also
+// owns the timeout, and kills this process when it expires.
 //
 // Test modes, which never open a window:
 //   dialog.js --visible <text>          what the detail box would display
 //   dialog.js --parse-buttons <buttons> the parsed button specs, as JSON
 ObjC.import('Cocoa');
 
-// Shortcut letters only start working this long after the alert appears: it
-// takes keyboard focus from whatever app you were typing in, and the rest of
-// a word in flight must not press a button.
-var KEY_GRACE_SECS = 0.7;
+var WIDTH = 520;
+var MARGIN = 20;
+var ICON = 64;
+var GAP = 12;
+var BUTTON_HEIGHT = 28;
+
+// Index of the button clicked; -1 while waiting.
+var choice = -1;
+
+ObjC.registerSubclass({
+  name: 'ClaudeDialogTarget',
+  methods: {
+    'pick:': {
+      types: ['void', ['id']],
+      implementation: function (sender) { choice = sender.tag; },
+    },
+  },
+});
 
 // Control, zero-width and bidi characters print as nothing, or silently
 // reorder the text after them, so the approver could read a different command
@@ -51,16 +71,20 @@ function underlined(text, index) {
   return attributed;
 }
 
+// Read from the right: the label may itself hold colons ("Always approve:
+// Bash(npm test:*)"), the key and the token never do.
 function parseButtons(spec) {
   return spec.split('|').map(function (entry) {
     var parts = entry.split(':');
-    var label = parts[0];
-    var key = (parts[1] || '').toLowerCase();
+    var token = parts.length > 2 ? parts.pop() : (parts[2] || '');
+    var key = (parts.length > 1 ? parts.pop() : '').toLowerCase();
+    var label = parts.join(':');
     var letter = key === 'esc' ? '' : key;
     return {
       label: label,
-      token: parts[2] || '',
+      token: token,
       keyEquivalent: letter,
+      escape: key === 'esc',
       // The shortcut letter is underlined wherever it first appears; a
       // button without one has nothing to underline.
       underlineAt: letter ? label.toLowerCase().indexOf(letter) : -1,
@@ -69,8 +93,7 @@ function parseButtons(spec) {
 }
 
 // The exact command, read-only but selectable, scrolling past a few lines.
-function detailView(detail) {
-  var width = 480;
+function detailView(detail, width) {
   var maxHeight = 220;
   var scroll = $.NSScrollView.alloc.initWithFrame($.NSMakeRect(0, 0, width, 60));
   scroll.hasVerticalScroller = true;
@@ -102,43 +125,92 @@ function detailView(detail) {
   return scroll;
 }
 
-// Builds the alert without showing it. Every key equivalent starts disarmed:
-// run() arms them after the grace period.
-function buildAlert(title, body, iconPath, buttons, detail) {
-  var alert = $.NSAlert.alloc.init;
-  alert.messageText = title;
-  alert.informativeText = body;
+// A label that wraps at <width>, sized to its text.
+function wrappingLabel(text, font, width) {
+  var label = $.NSTextField.wrappingLabelWithString(text);
+  label.font = font;
+  label.preferredMaxLayoutWidth = width;
+  label.setFrameSize($.NSMakeSize(width, label.fittingSize.height));
+  return label;
+}
 
-  // Without an explicit icon the alert borrows osascript's, which renders as
-  // a generic document badged with a caution triangle.
+// Builds the panel without showing it: icon and text on top, the command
+// below, one full-width button per choice at the bottom.
+function buildPanel(title, body, iconPath, buttons, detail) {
+  var textX = MARGIN + ICON + 16;
+  var textWidth = WIDTH - textX - MARGIN;
+  var titleView = wrappingLabel(title, $.NSFont.boldSystemFontOfSize(13), textWidth);
+  var bodyView = body ? wrappingLabel(body, $.NSFont.systemFontOfSize(12), textWidth) : null;
+  if (bodyView) bodyView.textColor = $.NSColor.secondaryLabelColor;
+  var detailBox = detail ? detailView(detail, WIDTH - 2 * MARGIN) : null;
+
+  var target = $.ClaudeDialogTarget.alloc.init;
+  var views = buttons.map(function (spec, i) {
+    var button = $.NSButton.buttonWithTitleTargetAction(spec.label, target, 'pick:');
+    button.tag = i;
+    // A letter only when the label has one; Return never picks anything.
+    button.keyEquivalent = spec.escape ? '\u001b' : spec.keyEquivalent;
+    button.keyEquivalentModifierMask = 0;
+    if (spec.underlineAt >= 0) button.attributedTitle = underlined(spec.label, spec.underlineAt);
+    return button;
+  });
+  var buttonWidth = 240;
+  views.forEach(function (view) {
+    buttonWidth = Math.max(buttonWidth, view.fittingSize.width + 32);
+  });
+  buttonWidth = Math.min(buttonWidth, WIDTH - 2 * MARGIN);
+
+  var textHeight = titleView.frame.size.height + (bodyView ? 6 + bodyView.frame.size.height : 0);
+  var header = Math.max(ICON, textHeight);
+  var buttonsHeight = views.length * BUTTON_HEIGHT + (views.length - 1) * 8;
+  var height = MARGIN + header + (detailBox ? GAP + detailBox.frame.size.height : 0)
+    + GAP + 4 + buttonsHeight + MARGIN;
+
+  var style = $.NSWindowStyleMaskTitled | $.NSWindowStyleMaskClosable | $.NSWindowStyleMaskNonactivatingPanel;
+  var panel = $.NSPanel.alloc.initWithContentRectStyleMaskBackingDefer(
+    $.NSMakeRect(0, 0, WIDTH, height), style, $.NSBackingStoreBuffered, false);
+  panel.title = 'Claude Code';
+  panel.releasedWhenClosed = false;
+  panel.level = $.NSFloatingWindowLevel;
+  panel.hidesOnDeactivate = false;
+  panel.becomesKeyOnlyIfNeeded = true;
+  panel.collectionBehavior = $.NSWindowCollectionBehaviorCanJoinAllSpaces
+    | $.NSWindowCollectionBehaviorFullScreenAuxiliary;
+  var content = panel.contentView;
+
+  var top = height - MARGIN;
   if (iconPath) {
     var image = $.NSImage.alloc.initWithContentsOfFile(iconPath);
-    if (!image.isNil()) alert.icon = image;
+    if (!image.isNil()) {
+      var icon = $.NSImageView.imageViewWithImage(image);
+      icon.frame = $.NSMakeRect(MARGIN, top - ICON, ICON, ICON);
+      icon.imageScaling = $.NSImageScaleProportionallyUpOrDown;
+      content.addSubview(icon);
+    }
+  }
+  titleView.setFrameOrigin($.NSMakePoint(textX, top - titleView.frame.size.height));
+  content.addSubview(titleView);
+  if (bodyView) {
+    bodyView.setFrameOrigin($.NSMakePoint(textX,
+      top - titleView.frame.size.height - 6 - bodyView.frame.size.height));
+    content.addSubview(bodyView);
   }
 
-  if (detail) alert.accessoryView = detailView(detail);
-
-  var views = buttons.map(function (spec) {
-    return alert.addButtonWithTitle(spec.label);
+  var y = top - header;
+  if (detailBox) {
+    y -= GAP + detailBox.frame.size.height;
+    detailBox.setFrameOrigin($.NSMakePoint(MARGIN, y));
+    content.addSubview(detailBox);
+  }
+  y -= GAP + 4;
+  views.forEach(function (view) {
+    y -= BUTTON_HEIGHT;
+    view.frame = $.NSMakeRect((WIDTH - buttonWidth) / 2, y, buttonWidth, BUTTON_HEIGHT);
+    content.addSubview(view);
+    y -= 8;
   });
 
-  // Lay out first: NSAlert rebuilds its buttons' titles while laying out,
-  // which would drop an attributed title set any earlier.
-  alert.layout;
-
-  views.forEach(function (view, i) {
-    var spec = buttons[i];
-    // Cleared on every button: this also strips Return from the first one, so
-    // a stray Enter can never pick an action. Every choice here is a
-    // deliberate click or letter.
-    view.keyEquivalent = '';
-    view.keyEquivalentModifierMask = 0;
-    if (spec.underlineAt >= 0) {
-      view.attributedTitle = underlined(spec.label, spec.underlineAt);
-    }
-  });
-
-  return { alert: alert, views: views };
+  return { panel: panel, views: views, target: target };
 }
 
 function run(argv) {
@@ -152,25 +224,24 @@ function run(argv) {
   var detail = argv[4] || '';
 
   var app = $.NSApplication.sharedApplication;
-  // Accessory keeps the notifier out of the Dock while still allowing the
-  // alert to become key — without a key window the letter shortcuts are dead.
+  // Accessory: no Dock icon. And this app is never activated: the panel is
+  // shown with orderFrontRegardless, never made key.
   app.setActivationPolicy($.NSApplicationActivationPolicyAccessory);
 
-  var built = buildAlert(title, body, iconPath, buttons, detail);
+  var built = buildPanel(title, body, iconPath, buttons, detail);
+  built.panel.center;
+  built.panel.orderFrontRegardless;
 
-  // Added for the modal mode, where runModal's loop actually runs.
-  var grace = $.NSTimer.timerWithTimeIntervalRepeatsBlock(KEY_GRACE_SECS, false, function () {
-    built.views.forEach(function (view, i) {
-      view.keyEquivalent = buttons[i].keyEquivalent;
-    });
-  });
-  $.NSRunLoop.currentRunLoop.addTimerForMode(grace, $.NSModalPanelRunLoopMode);
+  // No runModal: a modal session makes the panel key, which is exactly the
+  // keyboard grab this panel exists to avoid. Events are pumped by hand until
+  // a button is clicked or the panel is closed.
+  while (choice < 0 && built.panel.isVisible) {
+    var event = app.nextEventMatchingMaskUntilDateInModeDequeue(
+      $.NSEventMaskAny, $.NSDate.dateWithTimeIntervalSinceNow(0.25), $.NSDefaultRunLoopMode, true);
+    if (!event.isNil()) app.sendEvent(event);
+  }
+  built.panel.orderOut(null);
 
-  app.activateIgnoringOtherApps(true);
-  var response = built.alert.runModal;
-  grace.invalidate;
-
-  var index = response - $.NSAlertFirstButtonReturn;
-  if (index >= 0 && index < buttons.length) return buttons[index].token;
+  if (choice >= 0 && choice < buttons.length) return buttons[choice].token;
   return '';
 }

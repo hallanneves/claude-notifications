@@ -116,6 +116,50 @@ host_above() {
   done
 }
 
+# This hook's ancestors, nearest first, space-separated. Under an editor they
+# are how the click finds the window that owns the session: a Claude panel
+# descends from its window's extension host, a CLI from one of its terminals'
+# shells. NOTIFY_PID starts the walk elsewhere (tests).
+ancestor_pids() {
+  local table pid="${NOTIFY_PID:-$$}" hops=0 pp
+  table="$(ps -axo pid=,ppid=,tty=,comm= 2>/dev/null)"
+  while [ "$hops" -lt 40 ] && [ "$pid" -gt 1 ] 2>/dev/null; do
+    printf '%s ' "$pid"
+    pp="$(printf '%s\n' "$table" | awk -v p="$pid" '$1 == p { print $2; exit }')"
+    [ -n "$pp" ] || break
+    pid="$pp"
+    hops=$((hops + 1))
+  done
+}
+
+# Where the editor bridge (vscode-bridge/) publishes one registry file per
+# window. Fixed rather than under NOTIFY_STATE_DIR: the extension, running
+# inside the editor, has to find it without our configuration.
+NOTIFY_BRIDGE_DIR="${NOTIFY_BRIDGE_DIR:-$HOME/Library/Application Support/claude-notifications/vscode}"
+
+# The registry entry (JSON) of the live editor window owning a session whose
+# ancestry is <pids> — its extension host or one of its terminals' shells is
+# among them. Fails when no bridge knows the session: then the caller must not
+# guess, because asking the wrong window to show a Claude session makes the
+# Claude extension open a second panel resuming it.
+# usage: bridge_window <space-separated pids>
+bridge_window() {
+  local pids reg owner
+  pids="$(printf '%s' "$1" | tr -s ' ' '\n' | jq -sc 'map(select(. != null))' 2>/dev/null)"
+  [ -n "$pids" ] && [ "$pids" != "[]" ] || return 1
+  for reg in "$NOTIFY_BRIDGE_DIR"/*.json; do
+    [ -f "$reg" ] || continue
+    owner="$(jq -c --argjson pids "$pids" '.extHostPid as $host
+      | select(any($pids[]; . == $host) or any(.terminals[]?; . as $t | any($pids[]; . == $t)))' \
+      "$reg" 2>/dev/null)"
+    [ -n "$owner" ] || continue
+    kill -0 "$(printf '%s' "$owner" | jq -r '.extHostPid')" 2>/dev/null || continue
+    printf '%s' "$owner"
+    return 0
+  done
+  return 1
+}
+
 # Where this session runs, read from the process tree rather than from the
 # environment: multiplexers and terminals leak their variables into everything
 # started inside them (herdr inherits the __CFBundleIdentifier of whatever
@@ -232,10 +276,13 @@ herdr_session_title() {
 build_focus_args() {
   FOCUS_ARGS=(--cwd "$1" --kind "${ORIGIN_KIND:-unknown}" --host "$(host_bundle)"
     --term-program "${TERM_PROGRAM:-}" --iterm "$(iterm_session)" --tty "$(current_tty)")
-  if [ "${ORIGIN_KIND:-}" = "herdr" ]; then
-    FOCUS_ARGS+=(--herdr-bin "$(herdr_bin)" --herdr-socket "${HERDR_SOCKET_PATH:-}"
-      --herdr-pane "${HERDR_PANE_ID:-}" --session "${NOTIFY_SESSION:-}")
-  fi
+  case "${ORIGIN_KIND:-}" in
+    herdr)
+      FOCUS_ARGS+=(--herdr-bin "$(herdr_bin)" --herdr-socket "${HERDR_SOCKET_PATH:-}"
+        --herdr-pane "${HERDR_PANE_ID:-}" --session "${NOTIFY_SESSION:-}") ;;
+    editor-extension|editor-terminal)
+      FOCUS_ARGS+=(--pids "$(ancestor_pids)" --session "${NOTIFY_SESSION:-}") ;;
+  esac
 }
 
 # The click action as a shell command string (terminal-notifier -execute).
@@ -261,7 +308,9 @@ focus_now() {
 # True when a click has somewhere specific to land: a herdr pane or terminal
 # session we can name, or a project an editor can focus.
 has_focus_target() {
-  [ "${ORIGIN_KIND:-}" = "herdr" ] && return 0
+  case "${ORIGIN_KIND:-}" in
+    herdr|editor-extension|editor-terminal) return 0 ;;
+  esac
   [ -n "$(iterm_session)" ] && return 0
   [ "${TERM_PROGRAM:-}" = "Apple_Terminal" ] && return 0
   should_open_path "$1"
@@ -521,6 +570,34 @@ stamped_within() {
   [ -n "$age" ] && [ "$age" -lt "$3" ]
 }
 
+# One approval dialog at a time: parallel sessions queue instead of stacking
+# modal windows on top of each other. Gives up (returns 1) after
+# NOTIFY_DIALOG_QUEUE_SECS (30: the hook's 90s budget minus the dialog's 50)
+# or as soon as the user is looking at the session, whose own prompt then
+# takes over. A lock left by a dead process is taken over.
+dialog_lock() {
+  local lock="$NOTIFY_STATE_DIR/.dialog.lock" owner deadline
+  deadline=$(( $(date +%s) + ${NOTIFY_DIALOG_QUEUE_SECS:-30} ))
+  mkdir -p "$NOTIFY_STATE_DIR" 2>/dev/null
+  while ! mkdir "$lock" 2>/dev/null; do
+    owner="$(cat "$lock/pid" 2>/dev/null)"
+    if [ -n "$owner" ] && ! kill -0 "$owner" 2>/dev/null; then
+      rm -rf "$lock"
+      continue
+    fi
+    [ "$(date +%s)" -lt "$deadline" ] || return 1
+    is_user_watching && return 1
+    sleep 1
+  done
+  printf '%s' "$$" > "$lock/pid"
+  return 0
+}
+
+dialog_unlock() {
+  rm -rf "$NOTIFY_STATE_DIR/.dialog.lock" 2>/dev/null
+  return 0
+}
+
 # The binary that posts: the dedicated app's copy of terminal-notifier when it
 # exists (its own entry in System Settings, and the Claude icon), otherwise
 # terminal-notifier from PATH. NOTIFY_TN overrides. Fails when there is none.
@@ -553,12 +630,15 @@ first_line() {
 # after the user already clicked.
 #
 # <detail> is shown verbatim in a scrollable monospaced box under the body:
-# the exact command someone is about to approve.
+# the exact command someone is about to approve. With "until-watching" the
+# dialog also closes, unanswered, as soon as the user is looking at the
+# session again: its own prompt is right there, and a modal left on screen
+# would only hold it back.
 #
-# usage: run_dialog <title> <body> <icon> <buttons> [timeout_secs] [detail]
+# usage: run_dialog <title> <body> <icon> <buttons> [timeout_secs] [detail] [until-watching]
 run_dialog() {
   local title="$1" body="$2" icon="$3" buttons="$4" timeout="${5:-50}" detail="${6:-}"
-  local dir out flag pid watchdog res
+  local dir out flag pid watchdog poller="" res
   dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   out="$(mktemp)"
   flag="$out.timeout"
@@ -567,11 +647,21 @@ run_dialog() {
   pid=$!
   ( sleep "$timeout"; : > "$flag"; kill "$pid" 2>/dev/null ) >/dev/null 2>&1 &
   watchdog=$!
+  if [ "${7:-}" = "until-watching" ]; then
+    ( while sleep 1; do
+        if is_user_watching; then : > "$flag"; kill "$pid" 2>/dev/null; exit 0; fi
+      done ) >/dev/null 2>&1 &
+    poller=$!
+  fi
   wait "$pid" 2>/dev/null
   { kill "$watchdog" 2>/dev/null; wait "$watchdog" 2>/dev/null; } 2>/dev/null
+  if [ -n "$poller" ]; then
+    { kill "$poller" 2>/dev/null; wait "$poller" 2>/dev/null; } 2>/dev/null
+  fi
 
   # A dialog torn down mid-flight can still flush a token (AppKit unwinds the
-  # modal session as the process dies). A timeout is never an answer.
+  # modal session as the process dies). A timeout or a dismissal is never an
+  # answer.
   if [ -f "$flag" ]; then res=""; else res="$(cat "$out")"; fi
   rm -f "$out" "$flag"
   printf '%s' "$res"

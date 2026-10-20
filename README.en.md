@@ -30,21 +30,24 @@ No emojis in messages: visual identity comes from the **Claude icon** on the ban
 Smart behaviors:
 
 - **Approval dialog**: when Claude Code is about to ask for permission and you are **not
-  looking** (editor/terminal not frontmost, or nobody at the keyboard for over 60s), a native
-  dialog pops to the front carrying the Claude icon, the **project and branch** asking, and
-  four actions:
+  looking** (editor/terminal not frontmost, or nobody at the keyboard for over 60s), a panel
+  floats above everything with the Claude icon, the **project and branch** asking, and the
+  actions. The panel **does not take the keyboard**: you keep typing where you were, and
+  decide with a click.
 
   | Button | Shortcut | Effect |
   |---|---|---|
   | Approve | **click only** | returns `allow` to Claude Code |
+  | Always approve: `<rule>` | **click only** | approves and saves the rule Claude Code itself suggests (the terminal's "don't ask again"); shown only when there is one |
   | **D**eny | `D` | returns `deny` |
   | **G**o to session | `G` | returns to the session's tab or window and lets you decide there |
   | Close | `Esc` | closes and ignores, deciding nothing |
 
   Close/Esc, timeout (50s, tunable via `NOTIFY_DIALOG_TIMEOUT`), errors, or "go to session"
-  fall back to the normal terminal prompt — fail-safe. **No key approves**: the dialog takes
-  focus from wherever you were typing, so approving takes a click, and the other buttons'
-  shortcuts only start working 0.7s after it appears. The command shows **whole and exactly
+  fall back to the normal terminal prompt — fail-safe. **No key approves**, and the other
+  buttons' shortcuts work only after you click into the panel. Went back to the session with
+  the panel open? It closes on its own and the session's prompt takes over. Several sessions
+  asking at once wait their turn, one panel at a time. The command shows **whole and exactly
   as it will run**, in a scrolling box; invisible characters (control, zero-width, bidi) show
   up as `⟨U+202E⟩` instead of hiding or reordering text. Claude's own questions and a plan
   ready for review never open the dialog: they become a "your turn" banner while you are away.
@@ -62,8 +65,11 @@ Smart behaviors:
 - **A click returns you to where you were, never to another app**: under **herdr**, the click
   focuses the session's **exact pane** (found by session id, even after the pane moved) and
   brings forward the Terminal or iTerm2 tab herdr runs in. In a terminal, it selects the
-  **exact tab** that raised the notification (iTerm2 by session id, Terminal.app by tty). Running in an editor, it focuses the **window holding that project**, opened by the
-  workspace root the Claude extension records (opening a subfolder would create a new window).
+  **exact tab** that raised the notification (iTerm2 by session id, Terminal.app by tty). In
+  **VSCode** (and Cursor), with the bridge extension the installer adds, the click opens the
+  session's **exact Claude tab** or the **integrated terminal** it runs in, in the window that
+  owns the session. Without the bridge, it focuses the project's window by its workspace root
+  (opening a subfolder would create a new window).
   A tab that is gone falls back to the app hosting the session: a Terminal or herdr session
   never opens VSCode. If macOS denies the Automation permission, you get **one** notice with a
   click to System Settings. `NOTIFY_ACTIVATE_PATH=never` restores plain app focus.
@@ -108,6 +114,10 @@ The installer:
 3. If terminal-notifier is installed, creates the **"Claude Code"** app in `~/Applications`
    with the Claude icon (via `install-notifier-app.sh`) and opens it once so macOS shows the
    notification-permission prompt (creation only — updates never re-open the app).
+4. If `code` (or `cursor`) is on PATH, installs the **bridge extension**
+   ([`vscode-bridge/`](vscode-bridge)), which takes a click to the right Claude tab or
+   integrated terminal. Reload windows that are already open (*Developer: Reload Window*).
+   `NOTIFY_BRIDGE=0` skips this step.
 
 Then:
 
@@ -200,7 +210,8 @@ leave you on a detached HEAD. After updating, **restart Claude Code** so the hoo
 ```
 claude-notifications/
 ├── install.sh              # installs skill + hooks (+ app when possible); idempotent, with backup
-├── uninstall.sh            # removes skill, app and ONLY the skill's hooks (others preserved)
+├── uninstall.sh            # removes skill, app, bridge and ONLY the skill's hooks (others preserved)
+├── vscode-bridge/          # VSCode bridge extension: exact Claude tab and integrated terminal
 ├── install-notifier-app.sh # creates the "Claude Code" app in ~/Applications (permission + isolated icon)
 ├── set-claude-icon.sh      # applies the Claude icon to the dedicated app (or terminal-notifier)
 ├── hooks.json              # hook snippet for manual merges into settings.json
@@ -221,7 +232,7 @@ claude-notifications/
 │   ├── prompt-hook.sh      # UserPromptSubmit hook → clears the session's notices, times the turn
 │   ├── doctor.sh           # diagnostics: origin, gate, click target, notifier, herdr
 │   ├── approval-hook.sh    # PermissionRequest hook → Approve/Deny dialog
-│   ├── dialog.js           # generic NSAlert (underlined shortcuts + Claude icon)
+│   ├── dialog.js           # floating panel that never takes the keyboard (approval, update)
 │   ├── check-update.sh     # is there a newer version? (rate-limited, clickable banner)
 │   └── update.sh           # the Install / View on GitHub / Cancel dialog, then reinstall
 └── tests/                  # bats suite (runs in CI on macOS + shellcheck)
@@ -246,20 +257,22 @@ The foreground gate uses `lsappinfo` (no extra permissions). The decision is ret
 `hookSpecificOutput.decision.behavior: "allow" | "deny"`; any unexpected path exits 0 with no
 output, which makes Claude Code show the normal interactive prompt.
 
-The dialog is an **NSAlert** (JXA), not AppleScript's `display dialog` — the latter caps at
-three buttons (we need four) and supports neither per-button shortcuts nor underlined
-mnemonics. Three details that only surface once you try:
+The dialog is a **non-activating `NSPanel`** (JXA), not an NSAlert nor AppleScript's
+`display dialog`. An NSAlert activates its app and becomes the key window, so whatever you
+were typing in Slack landed in it and a stray letter pressed a button; `display dialog` caps
+at three buttons. Details that only surface once you try:
 
-- The timeout lives in the **shell**, not in JavaScript: a scheduled `NSTimer` never fires
-  during `runModal`, because the modal runs in `NSModalPanelRunLoopMode` while the timer
-  joins the default mode.
+- The panel is shown with `orderFrontRegardless` and **no `runModal`**: a modal session makes
+  the panel key. Events are pumped by hand until a click. Measured: the frontmost app stays
+  the same, osascript never becomes active, and the panel never becomes key.
+- The timeout lives in the **shell**, which kills the process when it expires; the same
+  watcher closes the panel when you look at the session again.
 - The timeout watchdog runs with stdout redirected. Without that it holds the caller's pipe
   open, and the decision only reaches Claude Code once the whole timeout elapses — even if
   you answered in two seconds.
-- Underlined titles are applied **after** `alert.layout`: NSAlert rebuilds its buttons'
-  titles while laying out and would drop an `attributedTitle` set any earlier.
-- The shortcut grace period is an `NSTimer` added **explicitly** to `NSModalPanelRunLoopMode`,
-  the only mode `runModal`'s loop runs in.
+- "Always approve" returns, **verbatim**, a suggestion that came in `permission_suggestions`:
+  the Claude extension itself only accepts `updatedPermissions` matching an offered
+  suggestion.
 
 > **Note**: the response format used (`hookSpecificOutput.decision.behavior`) is the currently
 > documented `PermissionRequest` format, and the allow and deny paths were also tested live in
@@ -332,7 +345,7 @@ Other knobs:
 ./uninstall.sh
 ```
 
-Removes the skill, the dedicated app and the skill's hook entries in
+Removes the skill, the dedicated app, the bridge extension and the skill's hook entries in
 `~/.claude/settings.json` (hooks from other tools are left intact; a timestamped backup is
 taken first). If you had applied the icon to Homebrew's shared terminal-notifier:
 `brew reinstall terminal-notifier` restores the original.

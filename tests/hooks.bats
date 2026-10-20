@@ -433,3 +433,72 @@ turn_started() {  # turn_started <segundos atras>
   [ "$status" -eq 0 ]
   [ ! -f "$WORK/notify.calls" ]
 }
+
+# ---- aprovar sempre, fila e auto-dismiss ----------------------------------------
+
+SUGGESTION='{"type":"addRules","rules":[{"toolName":"Bash","ruleContent":"npm test:*"}],"behavior":"allow","destination":"localSettings"}'
+
+approval_with_suggestion() {
+  run bash -c "jq -cn --argjson s '$SUGGESTION' '{session_id:\"s1\",tool_name:\"Bash\",tool_input:{command:\"npm test\"},permission_suggestions:[\$s]}' | \"\$0\"" \
+    "$WORK/skill/approval-hook.sh"
+}
+
+@test "approval: Aprovar sempre aparece com a regra que o Claude Code sugeriu" {
+  export NOTIFY_FORCE=1 OSA_RESULT="ignore"
+  approval_with_suggestion
+  [ "$status" -eq 0 ]
+  [[ "$(cat "$WORK/osascript.calls")" == *"Aprovar::approve|Aprovar sempre: Bash(npm test:*)::always|Negar:n:deny"* ]]
+}
+
+@test "approval: Aprovar sempre devolve a sugestao intacta em updatedPermissions" {
+  # Nada e montado aqui: e a mesma regra do "don't ask again" do terminal.
+  export NOTIFY_FORCE=1 OSA_RESULT="always"
+  approval_with_suggestion
+  [ "$status" -eq 0 ]
+  [ "$(echo "$output" | jq -r .hookSpecificOutput.decision.behavior)" = "allow" ]
+  [ "$(echo "$output" | jq -c '.hookSpecificOutput.decision.updatedPermissions')" = "[$SUGGESTION]" ]
+  [ "$(echo "$output" | jq -r .hookSpecificOutput.decision.updatedInput.command)" = "npm test" ]
+}
+
+@test "approval: sem sugestao nao ha Aprovar sempre" {
+  export NOTIFY_FORCE=1 OSA_RESULT="ignore"
+  run bash -c 'echo "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"ls\"}}" | "$0"' "$WORK/skill/approval-hook.sh"
+  [[ "$(cat "$WORK/osascript.calls")" != *"always"* ]]
+}
+
+@test "approval: com outro dialogo aberto, espera a vez e desiste sem decidir" {
+  export NOTIFY_FORCE=1 OSA_RESULT="approve" NOTIFY_DIALOG_QUEUE_SECS=1
+  mkdir -p "$STATE/.dialog.lock"
+  echo $$ > "$STATE/.dialog.lock/pid"
+  run bash -c 'echo "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"ls\"}}" | "$0"' "$WORK/skill/approval-hook.sh"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+  [ ! -f "$WORK/osascript.calls" ]
+  # O banner ja tinha saido: o pedido nao fica mudo.
+  [[ "$(cat "$WORK/notify.calls")" == *--approval* ]]
+}
+
+@test "approval: trava deixada por processo morto e assumida e liberada" {
+  export NOTIFY_FORCE=1 OSA_RESULT="deny"
+  mkdir -p "$STATE/.dialog.lock"
+  echo 999999 > "$STATE/.dialog.lock/pid"
+  run bash -c 'echo "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"ls\"}}" | "$0"' "$WORK/skill/approval-hook.sh"
+  [ "$(echo "$output" | jq -r .hookSpecificOutput.decision.behavior)" = "deny" ]
+  [ ! -d "$STATE/.dialog.lock" ]
+}
+
+@test "approval: voltar para a sessao fecha o dialogo sem decidir" {
+  # A sessao roda no Terminal; o usuario esta no Slack e, com a janela aberta,
+  # volta para o Terminal: o prompt dela assume, nada e aprovado.
+  export __CFBundleIdentifier="com.apple.Terminal" FAKE_FRONT_FILE="$WORK/front"
+  export OSA_RESULT="approve" OSA_DELAY=8
+  echo Slack > "$WORK/front"
+  ( sleep 1; echo Terminal > "$WORK/front" ) &
+  start="$(date +%s)"
+  run bash -c 'echo "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"ls\"}}" | "$0"' "$WORK/skill/approval-hook.sh"
+  elapsed=$(( $(date +%s) - start ))
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+  [ "$elapsed" -lt 6 ]
+  [[ "$(cat "$WORK/osascript.calls")" == *"dialog.js"* ]]
+}

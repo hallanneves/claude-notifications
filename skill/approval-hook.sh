@@ -112,14 +112,37 @@ if [ -n "$PROJ" ]; then BTITLE="$(say "$L_TITLE_APPROVAL_IN" "$PROJ")"; else BTI
 stamp announced "$SESSION"
 NOTIFY_TARGET_PATH="$CWD" "$DIR/notify.sh" --approval "$BANNER" "$BTITLE" "$TOOL" >/dev/null 2>&1 || true
 
+# "Always approve": the rule Claude Code itself offers as "don't ask again"
+# (permission_suggestions), returned verbatim, never one built here. Shown
+# only when there is one to offer.
+ALWAYS_RULE="$(printf '%s' "$INPUT" | jq -c '[.permission_suggestions[]?
+  | select(.type == "addRules" and .behavior == "allow")] | first // empty' 2>/dev/null)"
+BUTTONS="$L_APPROVAL_BUTTONS"
+if [ -n "$ALWAYS_RULE" ]; then
+  RULE_TEXT="$(printf '%s' "$ALWAYS_RULE" | jq -r '[.rules[]? | .toolName + (if .ruleContent then "(" + .ruleContent + ")" else "" end)]
+    | join(", ") | .[0:48] | gsub("[|]"; "/")' 2>/dev/null)"
+  [ -n "$RULE_TEXT" ] && BUTTONS="${BUTTONS%%|*}|$(say "$L_APPROVE_ALWAYS" "$RULE_TEXT")::always|${BUTTONS#*|}"
+fi
+
+# Parallel sessions wait their turn; giving up leaves the banner and Claude
+# Code's own prompt, which waits in the terminal.
+if ! dialog_lock; then
+  debug_log approval "no dialog: queue timed out or user came back"
+  exit 0
+fi
 RES="$(run_dialog "$HEADLINE" "$DESC" "$DIR/claude-logo.png" \
-  "$L_APPROVAL_BUTTONS" "${NOTIFY_DIALOG_TIMEOUT:-50}" "$DETAIL")"
+  "$BUTTONS" "${NOTIFY_DIALOG_TIMEOUT:-50}" "$DETAIL" until-watching)"
+dialog_unlock
 
 debug_log approval "decision=${RES:-<none>}"
 
 case "$RES" in
   approve)
     printf '%s' "$INPUT" | jq -c '{hookSpecificOutput:{hookEventName:"PermissionRequest",decision:{behavior:"allow",updatedInput:(.tool_input // {})}}}'
+    ;;
+  always)
+    printf '%s' "$INPUT" | jq -c --argjson rule "$ALWAYS_RULE" \
+      '{hookSpecificOutput:{hookEventName:"PermissionRequest",decision:{behavior:"allow",updatedInput:(.tool_input // {}),updatedPermissions:[$rule]}}}'
     ;;
   deny)
     # jq builds it so the reason survives quotes or anything else in the name.

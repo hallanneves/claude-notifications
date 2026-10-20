@@ -149,13 +149,19 @@ Configured in `~/.claude/settings.json`:
 - Where a session runs is read from the **process tree** (herdr, tmux, an editor's extension
   host or integrated terminal, or an app), not from environment variables, which multiplexers
   leak. Under herdr a click focuses the session's pane (looked up by session id) and the
-  Terminal/iTerm2 tab running the herdr client.
-- **PermissionRequest** → `approval-hook.sh`: when the user is not watching, a native dialog
-  (NSAlert via `dialog.js`) titled with the project and branch, showing the exact command in a
-  scrolling box (control/bidi characters rendered as `⟨U+XXXX⟩`), with Approve (click only —
-  no key ever approves) / **D**eny / **G**o to session / Close (**Esc**). Letter shortcuts arm
-  0.7s after it appears. It returns the decision to Claude Code (allow and deny confirmed
-  live). AskUserQuestion and ExitPlanMode get a "your turn" banner instead of a dialog. Close/
+  Terminal/iTerm2 tab running the herdr client. In VSCode/Cursor the bridge extension
+  (`vscode-bridge/`, installed by `install.sh`) reveals the session's Claude tab or its
+  integrated terminal, in the window that owns it; without the bridge the click stops at the
+  project's window.
+- **PermissionRequest** → `approval-hook.sh`: when the user is not watching, a floating
+  panel (`dialog.js`) that never takes the keyboard, titled with the project and branch,
+  showing the exact command in a scrolling box (control/bidi characters rendered as
+  `⟨U+XXXX⟩`), with Approve (click only — no key ever approves) / "Always approve: <rule>"
+  (only when Claude Code offers `permission_suggestions`; the suggestion is returned verbatim
+  as `updatedPermissions`) / **D**eny / **G**o to session / Close (**Esc**). Letter shortcuts
+  work once the user clicks into the panel. One panel at a time (parallel sessions queue), and
+  it closes unanswered when the user looks at the session again. It returns the decision to
+  Claude Code (allow and deny confirmed live). AskUserQuestion and ExitPlanMode get a "your turn" banner instead of a dialog. Close/
   Esc, timeout (`NOTIFY_DIALOG_TIMEOUT`, default 50s) and any error fall back to the normal
   terminal prompt (fail-safe). An already-allowlisted command raises no prompt → the hook
   never runs (not a bug).
@@ -182,13 +188,12 @@ Configured in `~/.claude/settings.json`:
   `claude-notify-repeat` marker (a recycled PID is never a target).
 - Without terminal-notifier the fallback is `osascript`: the banner is posted as "Script
   Editor" and clicking it opens an empty Script Editor window (a macOS quirk).
-- The approval dialog is an NSAlert (JXA), not AppleScript's `display dialog`: that one caps
-  at three buttons and has neither per-button shortcuts nor underlined mnemonics. It calls
-  `activateIgnoringOtherApps` — without it the window opens behind the focused app.
-- The dialog timeout lives in the **shell**, not the JS: a scheduled NSTimer never fires
-  during `runModal` (the modal uses `NSModalPanelRunLoopMode`; the timer joins the default
-  mode). The watchdog runs with stdout redirected — otherwise it holds the caller's pipe and
-  the decision only arrives when the whole timeout elapses, even if answered in 2s.
+- The approval dialog is a non-activating NSPanel (JXA), shown with `orderFrontRegardless`
+  and no `runModal` (a modal session would make it the key window and take the keyboard).
+  Not an NSAlert: that one activates its app, so typing elsewhere landed in it.
+- The dialog timeout lives in the **shell**, which kills the process. The watchdog runs with
+  stdout redirected — otherwise it holds the caller's pipe and the decision only arrives when
+  the whole timeout elapses, even if answered in 2s.
 - **Nothing appears at all**: System Settings → Notifications → allow the app ("Claude Code",
   or "Script Editor" on the fallback) with the style set to Banners/Alerts, never "None".
   Focus/Do Not Disturb silences it.

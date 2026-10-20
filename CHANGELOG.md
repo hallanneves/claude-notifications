@@ -3,6 +3,35 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.9.0] — 2026-10-20
+
+The exact VSCode tab, and an approval dialog that leaves your keyboard alone. Closes #3.
+
+### Added
+- **VSCode bridge extension** (`vscode-bridge/`, installed by `install.sh` into `code` and
+  `cursor` when present, only when its version changed; `NOTIFY_BRIDGE=0` skips it). A click,
+  or "Go to session", now reveals the session's **Claude tab** — or the **integrated
+  terminal** running Claude — in the window that owns the session. Each window publishes a
+  small registry and listens on its own Unix socket; the click picks the window by process
+  ancestry (the session descends from that window's extension host or one of its terminals'
+  shells) and asks only it. A `vscode://` URL could not do this: it goes to whichever window
+  was active last, where the Claude extension would open a second panel resuming a session
+  still running elsewhere. Packaged as a `.vsix` with `zip`, so installing needs neither node
+  nor vsce.
+- **"Always approve: <rule>"** in the approval dialog, when Claude Code offers
+  `permission_suggestions`: the suggestion is returned verbatim as `updatedPermissions`,
+  exactly the terminal's "don't ask again".
+- **One dialog at a time**: parallel sessions queue (up to `NOTIFY_DIALOG_QUEUE_SECS`, 30s)
+  instead of stacking modal windows; a lock left by a dead process is taken over.
+- **The dialog closes itself** when you look at the session again; its own prompt takes over.
+
+### Changed
+- **The approval dialog no longer takes the keyboard.** It is a floating, non-activating
+  panel: the app you were typing in keeps the keyboard, and you decide with a click. Letter
+  shortcuts work only after you click into the panel. Measured live before shipping: the
+  frontmost app does not change, osascript never becomes active, the panel never becomes key.
+  The update dialog uses the same panel.
+
 ## [1.8.0] — 2026-10-15
 
 Per-session focus, starting with herdr, and a banner worth reading.

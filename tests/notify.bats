@@ -65,8 +65,8 @@ tn_args() { cat "$WORK/tn.args"; }
 }
 
 @test "notify.conf define NOTIFY_ACTIVATE" {
-  mkdir -p "$HOME/.claude/skills/notify"
-  echo 'NOTIFY_ACTIVATE="com.example.editor"' > "$HOME/.claude/skills/notify/notify.conf"
+  mkdir -p "$STATE"
+  echo 'NOTIFY_ACTIVATE="com.example.editor"' > "$STATE/notify.conf"
   NOTIFY_TN="$STUB/tn" run "$WORK/skill/notify.sh" "msg"
   [ "$status" -eq 0 ]
   [[ "$(tn_args)" == *$'-activate\ncom.example.editor'* ]]

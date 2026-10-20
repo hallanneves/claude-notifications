@@ -11,6 +11,7 @@
 set -uo pipefail
 
 DIR="$(cd "$(dirname "$0")" && pwd)"
+ROOT="$(cd "$DIR/../.." && pwd)"
 # shellcheck source=notify-lib.sh
 . "$DIR/notify-lib.sh"
 load_notify_conf
@@ -19,7 +20,7 @@ detect_origin
 HOST="$(host_bundle)"
 CWD="$PWD"
 
-say "$L_DOC_TITLE" "$(cat "$DIR/VERSION" 2>/dev/null || echo '?')"
+say "$L_DOC_TITLE" "$(cat "$ROOT/VERSION" 2>/dev/null || echo '?')"
 echo
 
 # --- where this session runs, and where a click would land ------------------
@@ -81,8 +82,27 @@ else
   say "$L_DOC_NOTIFIER" "$TN"
 fi
 say "$L_DOC_STATE" "$NOTIFY_STATE_DIR"
+if plugin_installed; then
+  FROM="$(marketplace_field .source.repo)"
+  [ -n "$FROM" ] || FROM="$(marketplace_field .source.path)"
+  say "$L_DOC_PLUGIN" "$PLUGIN_ID" "${FROM:-?}"
+else
+  echo "$L_DOC_PLUGIN_NONE"
+fi
 
 # --- things worth fixing -----------------------------------------------------
+if legacy_hooks_present; then
+  echo
+  echo "$L_DOC_LEGACY"
+elif plugin_installed && setup_needed "$ROOT"; then
+  echo
+  say "$L_DOC_SETUP_PENDING" "$DIR/setup.sh"
+fi
+if autoupdate_off; then
+  echo
+  say "$L_DOC_AUTOUPDATE_OFF" "$MARKETPLACE_NAME"
+fi
+
 for mark in "$NOTIFY_STATE_DIR"/.tcc-hint-*; do
   [ -f "$mark" ] || continue
   echo

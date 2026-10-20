@@ -51,11 +51,11 @@ EOF
   # Stubs first even in suites that keep the full PATH (restrict_path narrows
   # it further): otherwise those would read the real process tree.
   export PATH="$STUB:$PATH"
-  # Nothing in the suite may reach the network. The Stop hook runs the update
-  # check in the background, and a real `git ls-remote` against GitHub posts
-  # its banner through the same stubs, racing whatever the test asserts. Tests
-  # of the update check pass their own fake remote.
-  export NOTIFY_UPDATE_REPO="$WORK/no-remote"
+  # Only stub_claude's fake may run as `claude`: a real one would install a
+  # plugin from GitHub.
+  export NOTIFY_CLAUDE="$STUB/claude"
+  # Nor may the scripts widen PATH to the machine's Homebrew and editor CLIs.
+  export NOTIFY_EXTRA_PATH=""
   # The real idle time is whatever the developer is doing right now; pin it.
   # FAKE_IDLE_SECS simulates someone away from the keyboard.
   cat > "$STUB/ioreg" <<'EOF'
@@ -75,16 +75,57 @@ restrict_path() {
 
 # Disposable copy of the skill so scripts never run against the repo files.
 copy_skill() {
-  cp -R "$REPO/skill" "$WORK/skill"
+  cp -R "$REPO/skills/notify" "$WORK/skill"
 }
 
-# Disposable copy of the repo pieces the installer needs.
+# Disposable copy of the plugin: everything but the docs and the tests.
 copy_repo() {
-  mkdir -p "$WORK/repo"
-  cp "$REPO/install.sh" "$REPO/uninstall.sh" "$REPO/hooks.json" "$REPO/VERSION" "$WORK/repo/"
-  cp -R "$REPO/skill" "$WORK/repo/skill"
-  cp -R "$REPO/assets" "$WORK/repo/assets"
-  cp -R "$REPO/vscode-bridge" "$WORK/repo/vscode-bridge"
+  mkdir -p "$WORK/repo/skills"
+  cp "$REPO/install.sh" "$REPO/uninstall.sh" "$REPO/install-notifier-app.sh" \
+    "$REPO/set-claude-icon.sh" "$REPO/VERSION" "$WORK/repo/"
+  cp -R "$REPO/.claude-plugin" "$REPO/hooks" "$REPO/assets" "$REPO/vscode-bridge" "$WORK/repo/"
+  cp -R "$REPO/skills/notify" "$WORK/repo/skills/notify"
+}
+
+# A pre-2.0 install: its copy under ~/.claude/skills/notify and its hooks in
+# ~/.claude/settings.json, next to other tools' hooks.
+make_legacy_install() {
+  mkdir -p "$HOME/.claude/skills/notify"
+  cp -R "$REPO/skills/notify/." "$HOME/.claude/skills/notify/"
+  jq -n '{hooks: {
+      Stop: [{hooks: [{type: "command", command: "\"$HOME/.claude/skills/notify/stop-hook.sh\"", async: true}]},
+             {hooks: [{type: "command", command: "other-tool.sh"}]}],
+      PermissionRequest: [{hooks: [{type: "command", command: "\"$HOME/.claude/skills/notify/approval-hook.sh\"", timeout: 90}]}],
+      PreToolUse: [{hooks: [{type: "command", command: "linter.sh"}]}]
+    }}' > "$HOME/.claude/settings.json"
+}
+
+# claude stub: records argv to $WORK/claude.calls and keeps the files the
+# scripts read (installed_plugins.json, known_marketplaces.json) the way the
+# real CLI writes them. FAKE_CLAUDE_FAIL=1 makes `plugin install` fail.
+stub_claude() {
+  sed "s|@WORK@|$WORK|g" > "$STUB/claude" <<'STUBEOF'
+#!/bin/bash
+printf '%s\n' "$*" >> "@WORK@/claude.calls"
+P="$HOME/.claude/plugins"
+mkdir -p "$P"
+case "$1 $2" in
+  "plugin install")
+    [ "${FAKE_CLAUDE_FAIL:-0}" = 1 ] && { echo "install failed" >&2; exit 1; }
+    src=""
+    while [ $# -gt 0 ]; do [ "$1" = "--marketplace" ] && src="$2"; shift; done
+    case "$src" in
+      /*) jq -n --arg p "$src" '{"claude-notifications": {source: {source: "directory", path: $p}}}' ;;
+      *)  jq -n --arg r "$src" '{"claude-notifications": {source: {source: "github", repo: $r}}}' ;;
+    esac > "$P/known_marketplaces.json"
+    jq -n '{version: 2, plugins: {"notify@claude-notifications": [{scope: "user", version: "2.0.0"}]}}' \
+      > "$P/installed_plugins.json" ;;
+  "plugin uninstall") echo '{"version": 2, "plugins": {}}' > "$P/installed_plugins.json" ;;
+  "plugin marketplace") echo '{}' > "$P/known_marketplaces.json" ;;
+esac
+exit 0
+STUBEOF
+  chmod +x "$STUB/claude"
 }
 
 # Replace the copied notify.sh with a recorder: argv goes to $WORK/notify.calls
@@ -98,20 +139,6 @@ printf 'NOTIFY_GROUP=%s\n' "\${NOTIFY_GROUP:-}" >> "$WORK/notify.calls"
 printf -- '---\n' >> "$WORK/notify.calls"
 EOF
   chmod +x "$WORK/skill/notify.sh"
-}
-
-# A throwaway git repo standing in for the upstream remote, tagged as given.
-make_fake_remote() {
-  local dir="$WORK/remote" tag
-  mkdir -p "$dir"
-  git init -q "$dir"
-  git -C "$dir" config user.email t@t
-  git -C "$dir" config user.name t
-  echo x > "$dir/a.txt"
-  git -C "$dir" add a.txt
-  git -C "$dir" commit -qm init
-  for tag in "$@"; do git -C "$dir" tag "$tag"; done
-  printf '%s' "$dir"
 }
 
 # lsappinfo stub: FAKE_FRONT controls the frontmost app's name, and its bundle

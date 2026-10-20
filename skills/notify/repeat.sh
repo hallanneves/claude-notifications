@@ -61,8 +61,10 @@ case "$INT" in
 esac
 [ "$INT" -ge 5 ] || { say "$L_REP_MIN_INTERVAL" "$INT"; exit 1; }
 
+# "from=" names the copy that started it, so migrate.sh can tell the reminders
+# of a pre-2.0 install (which lack it) from the plugin's.
 nohup env NOTIFY_BIN="$DIR/notify.sh" NOTIFY_MSG="$MSG" NOTIFY_TITLE="$TITLE" NOTIFY_INT="$INT" \
-  bash -c "# $MARKER
+  bash -c "# $MARKER from=$DIR
 while true; do sleep \"\$NOTIFY_INT\"; \"\$NOTIFY_BIN\" \"\$NOTIFY_MSG\" \"\$NOTIFY_TITLE\"; done" \
   >/dev/null 2>&1 &
 PID=$!

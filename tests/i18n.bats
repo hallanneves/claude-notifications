@@ -71,8 +71,8 @@ EOF
 }
 
 @test "i18n: notify.conf define o idioma" {
-  mkdir -p "$HOME/.claude/skills/notify"
-  echo 'NOTIFY_LANG="en"' > "$HOME/.claude/skills/notify/notify.conf"
+  mkdir -p "$STATE"
+  echo 'NOTIFY_LANG="en"' > "$STATE/notify.conf"
   NOTIFY_LANG= NOTIFY_TN="$STUB/tn" run "$WORK/skill/notify.sh" --fail "quebrou"
   [ "$status" -eq 0 ]
   [[ "$(cat "$WORK/tn.args")" == *$'-title\nSomething failed'* ]]

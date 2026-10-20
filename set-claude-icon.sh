@@ -9,8 +9,8 @@
 # restores the stock icon and this script has to be re-run.
 set -euo pipefail
 cd "$(dirname "$0")"
-# shellcheck source=skill/notify-lib.sh
-. ./skill/notify-lib.sh
+# shellcheck source=skills/notify/notify-lib.sh
+. ./skills/notify/notify-lib.sh
 load_notify_conf
 
 APP="$(icon_target_bundle)" || {

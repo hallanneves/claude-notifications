@@ -11,6 +11,8 @@ DIR="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=notify-lib.sh
 . "$DIR/notify-lib.sh"
 load_notify_conf
+# A pre-2.0 install is still wired: it handles this event (see plugin_yields).
+plugin_yields && exit 0
 
 INPUT="$(cat)"
 
@@ -130,7 +132,7 @@ if ! dialog_lock; then
   debug_log approval "no dialog: queue timed out or user came back"
   exit 0
 fi
-RES="$(run_dialog "$HEADLINE" "$DESC" "$DIR/claude-logo.png" \
+RES="$(run_dialog "$HEADLINE" "$DESC" "$DIR/../../assets/claude-logo.png" \
   "$BUTTONS" "${NOTIFY_DIALOG_TIMEOUT:-50}" "$DETAIL" until-watching)"
 dialog_unlock
 

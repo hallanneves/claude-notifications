@@ -3,6 +3,55 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [2.0.0] — 2026-10-20
+
+A Claude Code plugin. Installing and updating are Claude Code's job now, and the scripts that
+did them are gone.
+
+### Added
+- **Plugin and marketplace in one repo**: `.claude-plugin/plugin.json` (`notify`),
+  `.claude-plugin/marketplace.json` (`claude-notifications`), `hooks/hooks.json`, and the
+  skill in `skills/notify/`. Install with
+  `/plugin install notify --marketplace hallanneves/claude-notifications`.
+- **`SessionStart` hook** (`session-hook.sh`): the first session on a new version runs
+  `setup.sh` in the background (the notifier app and the VSCode bridge, what `install.sh` used
+  to do) and says so; it also says once how to turn on auto-updates, which Claude Code leaves
+  off for third-party marketplaces.
+- **`/notify migrate`** (`migrate.sh`): retires a 1.x install. Only its hook entries leave
+  `~/.claude/settings.json` (backup kept, other tools' hooks untouched); `notify.conf` and the
+  state move to `~/Library/Application Support/claude-notifications`; the old copy's reminders
+  stop; `~/.claude/skills/notify` goes. It refuses while the plugin is not installed.
+- `doctor.sh` reports where the plugin came from, a 1.x install still wired, auto-update off,
+  and a setup still pending.
+- CI validates the plugin with `claude plugin validate --strict`, and a release tag must match
+  `plugin.json`'s version.
+
+### Changed
+- **While a 1.x install is still wired, the plugin stands by.** Claude Code runs a plugin's
+  hooks next to the ones in `settings.json` and never deduplicates the two, so every event
+  would notify twice; each session asks for `/notify migrate` instead.
+- `install.sh` installs the plugin through the `claude` CLI (`--local` for a checkout, loaded
+  in place), runs the setup, then migrates. A failed install leaves 1.x working. It is also
+  what 1.x's update notice runs, so clicking Install there lands on 2.0, migrated. A click
+  runs with launchd's bare PATH, so it and `setup.sh` also look for `claude`,
+  terminal-notifier and the editors' CLIs where they usually live.
+- `uninstall.sh` uninstalls the plugin and its marketplace too.
+- `notify.conf` lives in `~/Library/Application Support/claude-notifications/` (the plugin's
+  directory is replaced on every update). The old path still counts until you migrate.
+- The state directory no longer follows `CLAUDE_PLUGIN_DATA`: only hooks see that variable,
+  and the same files are read by the skill's commands, a notification's click and the VSCode
+  bridge.
+- Reminders record which copy started them, so a migration stops only the old ones.
+
+### Removed
+- The home-made updater: `check-update.sh`, `update.sh`, the daily check in the `Stop` hook,
+  and `NOTIFY_UPDATE_CHECK` / `_INTERVAL` / `_REPO`. Updates come from `/plugin`.
+- The root `hooks.json` and the `settings.json` merge in `install.sh`.
+
+### Fixed
+- A test of the approval dialog closing on its own assumed the hook reached the dialog in
+  under a second; on a loaded machine it takes up to four.
+
 ## [1.9.1] — 2026-10-20
 
 ### Fixed

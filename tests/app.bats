@@ -9,7 +9,7 @@ setup() {
   common_setup
   mkdir -p "$WORK/repo"
   cp "$REPO/install-notifier-app.sh" "$REPO/set-claude-icon.sh" "$WORK/repo/"
-  cp -R "$REPO/skill" "$WORK/repo/skill"
+  mkdir -p "$WORK/repo/skills" && cp -R "$REPO/skills/notify" "$WORK/repo/skills/notify"
   cp -R "$REPO/assets" "$WORK/repo/assets"
 
   # O terminal-notifier "do Homebrew": wrapper no bin, bundle no keg.

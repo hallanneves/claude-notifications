@@ -3,6 +3,7 @@ name: CI
 on:
   push:
     branches: [main]
+    tags: ['v*']
   pull_request:
 
 jobs:
@@ -21,9 +22,25 @@ jobs:
           sudo install "shellcheck-${SHELLCHECK_VERSION}/shellcheck" /usr/local/bin/shellcheck
           shellcheck --version
       - name: shellcheck
-        # skill/lang/*.sh included: a syntax error in a catalogue breaks every
+        # skills/notify/lang/*.sh included: a syntax error in a catalogue breaks every
         # script that sources it, and would otherwise sail through green.
-        run: shellcheck -x -P SCRIPTDIR -S style install.sh uninstall.sh install-notifier-app.sh set-claude-icon.sh vscode-bridge/build-vsix.sh skill/*.sh skill/lang/*.sh tests/helpers.bash
+        run: shellcheck -x -P SCRIPTDIR -S style install.sh uninstall.sh install-notifier-app.sh set-claude-icon.sh vscode-bridge/build-vsix.sh skills/notify/*.sh skills/notify/lang/*.sh tests/helpers.bash
+
+  plugin:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Claude Code
+        run: npm install -g @anthropic-ai/claude-code
+      - name: Validate the plugin and its marketplace
+        run: claude plugin validate . --strict
+      # Claude Code offers an update only when plugin.json's version changes,
+      # so a release tag that disagrees with it would ship nothing.
+      - name: A release tag matches the plugin's version
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          want="v$(jq -r .version .claude-plugin/plugin.json)"
+          [ "$GITHUB_REF_NAME" = "$want" ] || { echo "tag $GITHUB_REF_NAME, plugin.json says $want"; exit 1; }
 
   tests:
     runs-on: macos-latest

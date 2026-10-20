@@ -1,6 +1,8 @@
 #!/usr/bin/env bats
-# install.sh / uninstall.sh — merge por evento, idempotência, preservação de
-# hooks alheios. Roda com HOME descartável e PATH sem terminal-notifier.
+# install.sh / setup.sh / uninstall.sh — o plugin entra pelo CLI do Claude
+# Code, a instalacao antiga sai so depois disso, e o que fica fora do Claude
+# Code (app de notificacao, extensao ponte) e preparado uma vez por versao.
+# HOME descartavel, PATH sem terminal-notifier e um `claude` falso.
 
 load helpers
 
@@ -8,101 +10,12 @@ setup() {
   common_setup
   copy_repo
   restrict_path
+  stub_claude
+  stub_osascript
   SETTINGS="$HOME/.claude/settings.json"
 }
 
 teardown() { common_teardown; }
-
-@test "instalacao do zero adiciona os 4 hooks e a skill" {
-  run "$WORK/repo/install.sh"
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"hook Notification adicionado"* ]]
-  [[ "$output" == *"hook Stop adicionado"* ]]
-  [[ "$output" == *"hook PermissionRequest adicionado"* ]]
-  [[ "$output" == *"hook UserPromptSubmit adicionado"* ]]
-  [ -x "$HOME/.claude/skills/notify/prompt-hook.sh" ]
-  [ -x "$HOME/.claude/skills/notify/doctor.sh" ]
-  # O UserPromptSubmit nunca pode atrasar o prompt.
-  [ "$(jq '.hooks.UserPromptSubmit[0].hooks[0].async' "$SETTINGS")" = "true" ]
-  for ev in Notification Stop PermissionRequest UserPromptSubmit; do
-    [ "$(jq --arg ev "$ev" '.hooks[$ev] | tostring | contains("/skills/notify/")' "$SETTINGS")" = "true" ]
-  done
-  [ -x "$HOME/.claude/skills/notify/notify.sh" ]
-  [ -f "$HOME/.claude/skills/notify/notify-lib.sh" ]
-  # O dialog de aprovacao e seu icone precisam viajar junto com a skill.
-  [ -f "$HOME/.claude/skills/notify/dialog.js" ]
-  [ -f "$HOME/.claude/skills/notify/claude-logo.png" ]
-  [ -f "$HOME/.claude/skills/notify/VERSION" ]
-}
-
-@test "re-rodar e idempotente: nada muda e nenhum backup novo" {
-  "$WORK/repo/install.sh" >/dev/null
-  before="$(cat "$SETTINGS")"
-  backups_before="$(find "$HOME/.claude" -name 'settings.json.bak.*' | wc -l)"
-  run "$WORK/repo/install.sh"
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"já configurado"* ]]
-  [[ "$output" != *"não vou sobrescrever"* ]]
-  [ "$(cat "$SETTINGS")" = "$before" ]
-  [ "$(find "$HOME/.claude" -name 'settings.json.bak.*' | wc -l)" = "$backups_before" ]
-}
-
-@test "hook alheio e preservado e so os eventos livres sao adicionados" {
-  mkdir -p "$HOME/.claude"
-  echo '{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"other-tool.sh"}]}]}}' > "$SETTINGS"
-  run "$WORK/repo/install.sh"
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"não vou sobrescrever"* ]]
-  [[ "$output" == *Stop* ]]
-  [ "$(jq -r '.hooks.Stop[0].hooks[0].command' "$SETTINGS")" = "other-tool.sh" ]
-  [ "$(jq '.hooks.Notification | tostring | contains("/skills/notify/")' "$SETTINGS")" = "true" ]
-  [ "$(jq '.hooks.PermissionRequest | tostring | contains("/skills/notify/")' "$SETTINGS")" = "true" ]
-}
-
-@test "instalacao que modifica cria backup timestampado" {
-  "$WORK/repo/install.sh" >/dev/null
-  count="$(find "$HOME/.claude" -name 'settings.json.bak.*' | wc -l | tr -d ' ')"
-  [ "$count" = "1" ]
-}
-
-@test "uninstall remove o que e nosso e preserva o alheio" {
-  "$WORK/repo/install.sh" >/dev/null
-  # injeta um hook alheio num evento nosso e um evento que não é nosso
-  tmp="$(mktemp)"
-  jq '.hooks.Stop += [{"hooks":[{"type":"command","command":"other-tool.sh"}]}]
-      | .hooks.PreToolUse = [{"hooks":[{"type":"command","command":"linter.sh"}]}]' \
-    "$SETTINGS" > "$tmp" && mv "$tmp" "$SETTINGS"
-
-  run "$WORK/repo/uninstall.sh"
-  [ "$status" -eq 0 ]
-  [ ! -d "$HOME/.claude/skills/notify" ]
-  [ "$(jq '.hooks | has("Notification")' "$SETTINGS")" = "false" ]
-  [ "$(jq '.hooks | has("PermissionRequest")' "$SETTINGS")" = "false" ]
-  [ "$(jq '.hooks | has("UserPromptSubmit")' "$SETTINGS")" = "false" ]
-  [ "$(jq -r '.hooks.Stop[0].hooks[0].command' "$SETTINGS")" = "other-tool.sh" ]
-  # O estado (silencio, lembretes, logs) sai junto.
-  [ ! -d "$STATE" ]
-  [ "$(jq -r '.hooks.PreToolUse[0].hooks[0].command' "$SETTINGS")" = "linter.sh" ]
-}
-
-@test "uninstall num sistema limpo nao falha" {
-  run "$WORK/repo/uninstall.sh"
-  [ "$status" -eq 0 ]
-}
-
-@test "instalacao migra o estado da versao antiga e preserva o silencio" {
-  # Ate a 1.7 o estado morava ao lado da skill; reinstalar trocava o diretorio.
-  mkdir -p "$HOME/.claude/skills/notify"
-  echo forever > "$HOME/.claude/skills/notify/.mute-until"
-  echo "123 x" > "$HOME/.claude/skills/notify/.repeat.pids"
-  run "$WORK/repo/install.sh"
-  [ "$status" -eq 0 ]
-  [ "$(cat "$STATE/.mute-until")" = "forever" ]
-  [ "$(cat "$STATE/.repeat.pids")" = "123 x" ]
-  [ ! -f "$HOME/.claude/skills/notify/.mute-until" ]
-  run "$HOME/.claude/skills/notify/mute.sh" status
-  [[ "$output" == *"silenciadas"* ]]
-}
 
 # code falso: lista FAKE_CODE_LIST e grava instalacoes/remocoes.
 stub_code() {
@@ -118,35 +31,121 @@ STUBEOF
   chmod +x "$STUB/code"
 }
 
-@test "instalacao instala a extensao ponte no VSCode" {
-  stub_code
+@test "install: instala o plugin do GitHub pelo CLI do Claude Code" {
   run "$WORK/repo/install.sh"
+  [ "$status" -eq 0 ]
+  [ "$(head -1 "$WORK/claude.calls")" = "plugin install notify --marketplace hallanneves/claude-notifications --scope user" ]
+  [[ "$output" == *"plugin notify@claude-notifications instalado"* ]]
+  # A versao preparada fica registrada: a primeira sessao nao refaz nada.
+  [ "$(cat "$STATE/.setup-version")" = "$(cat "$WORK/repo/VERSION")" ]
+}
+
+@test "install: --local instala a partir deste checkout" {
+  run "$WORK/repo/install.sh" --local
+  [ "$status" -eq 0 ]
+  [[ "$(head -1 "$WORK/claude.calls")" == *"--marketplace $WORK/repo "* ]]
+}
+
+@test "install: sem o CLI do Claude Code, falha e nao mexe na instalacao antiga" {
+  make_legacy_install
+  before="$(cat "$SETTINGS")"
+  NOTIFY_CLAUDE="$WORK/nao-existe" run "$WORK/repo/install.sh"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"/plugin install notify --marketplace hallanneves/claude-notifications"* ]]
+  [ "$(cat "$SETTINGS")" = "$before" ]
+  [ -d "$HOME/.claude/skills/notify" ]
+}
+
+@test "install: se o plugin nao instala, a instalacao antiga segue intacta" {
+  make_legacy_install
+  before="$(cat "$SETTINGS")"
+  FAKE_CLAUDE_FAIL=1 run "$WORK/repo/install.sh"
+  [ "$status" -eq 1 ]
+  [ "$(cat "$SETTINGS")" = "$before" ]
+  [ -d "$HOME/.claude/skills/notify" ]
+}
+
+@test "install: por cima de uma 1.x, migra preservando hooks alheios e o silencio" {
+  make_legacy_install
+  echo forever > "$HOME/.claude/skills/notify/.mute-until"
+  run "$WORK/repo/install.sh"
+  [ "$status" -eq 0 ]
+  [ "$(jq '.hooks | tostring | contains(".claude/skills/notify/")' "$SETTINGS")" = "false" ]
+  [ "$(jq -r '.hooks.Stop[0].hooks[0].command' "$SETTINGS")" = "other-tool.sh" ]
+  [ ! -d "$HOME/.claude/skills/notify" ]
+  [ "$(cat "$STATE/.mute-until")" = "forever" ]
+}
+
+@test "install: rodar de novo nao quebra nada" {
+  "$WORK/repo/install.sh" >/dev/null
+  run "$WORK/repo/install.sh"
+  [ "$status" -eq 0 ]
+}
+
+@test "setup: instala a extensao ponte no VSCode" {
+  stub_code
+  run "$WORK/repo/skills/notify/setup.sh"
   [ "$status" -eq 0 ]
   [[ "$(cat "$WORK/code.calls")" == *"--install-extension"* ]]
   unzip -Z1 "$WORK/installed.vsix" | grep -qx "extension/extension.js"
   [[ "$output" == *"extensão ponte instalada no code"* ]]
 }
 
-@test "reinstalar com a ponte na mesma versao nao reinstala" {
+@test "setup: acha o code fora do PATH do launchd, como no clique da 1.x" {
+  # O aviso de atualizacao da 1.x roda o install.sh a partir de um clique, com
+  # o PATH minimo do launchd: sem isso a ponte e o app ficariam para tras.
+  mkdir -p "$WORK/brew"
+  stub_code
+  mv "$STUB/code" "$WORK/brew/code"
+  NOTIFY_EXTRA_PATH=":$WORK/brew" run "$WORK/repo/skills/notify/setup.sh"
+  [ "$status" -eq 0 ]
+  [[ "$(cat "$WORK/code.calls")" == *"--install-extension"* ]]
+}
+
+@test "setup: com a ponte na mesma versao, nao reinstala" {
   stub_code
   export FAKE_CODE_LIST="hallanneves.claude-notify-bridge@$(jq -r .version "$REPO/vscode-bridge/package.json")"
-  run "$WORK/repo/install.sh"
+  run "$WORK/repo/skills/notify/setup.sh"
   [ "$status" -eq 0 ]
   [[ "$(cat "$WORK/code.calls")" != *"--install-extension"* ]]
   [[ "$output" == *"extensão ponte já instalada"* ]]
 }
 
-@test "NOTIFY_BRIDGE=0 nao instala a ponte" {
+@test "setup: NOTIFY_BRIDGE=0 nao instala a ponte" {
   stub_code
-  NOTIFY_BRIDGE=0 run "$WORK/repo/install.sh"
+  NOTIFY_BRIDGE=0 run "$WORK/repo/skills/notify/setup.sh"
   [ "$status" -eq 0 ]
   [ ! -f "$WORK/code.calls" ]
 }
 
-@test "uninstall remove a extensao ponte" {
+@test "setup: outro setup rodando agora faz este sair sem mexer em nada" {
+  stub_code
+  mkdir -p "$STATE/.setup.lock"
+  run "$WORK/repo/skills/notify/setup.sh"
+  [ "$status" -eq 0 ]
+  [ ! -f "$WORK/code.calls" ]
+  [ ! -f "$STATE/.setup-version" ]
+}
+
+@test "uninstall: remove o plugin, o que sobrou da 1.x e preserva o alheio" {
   stub_code
   export FAKE_CODE_LIST="hallanneves.claude-notify-bridge"
+  "$WORK/repo/install.sh" >/dev/null
+  make_legacy_install
   run "$WORK/repo/uninstall.sh"
   [ "$status" -eq 0 ]
+  grep -qx "plugin uninstall notify@claude-notifications -y" "$WORK/claude.calls"
+  grep -qx "plugin marketplace remove claude-notifications" "$WORK/claude.calls"
+  [ "$(jq '.hooks | tostring | contains(".claude/skills/notify/")' "$SETTINGS")" = "false" ]
+  [ "$(jq -r '.hooks.Stop[0].hooks[0].command' "$SETTINGS")" = "other-tool.sh" ]
+  [ "$(jq -r '.hooks.PreToolUse[0].hooks[0].command' "$SETTINGS")" = "linter.sh" ]
+  [ ! -d "$HOME/.claude/skills/notify" ]
+  [ ! -d "$STATE" ]
   [[ "$(cat "$WORK/code.calls")" == *"--uninstall-extension hallanneves.claude-notify-bridge"* ]]
+}
+
+@test "uninstall: sistema limpo nao falha" {
+  run "$WORK/repo/uninstall.sh"
+  [ "$status" -eq 0 ]
+  [ ! -f "$WORK/claude.calls" ] || ! grep -q uninstall "$WORK/claude.calls"
 }

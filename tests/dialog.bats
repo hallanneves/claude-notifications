@@ -1,7 +1,8 @@
 #!/usr/bin/env bats
 # dialog.js — o que a janela de aprovacao mostra e quais teclas ela aceita.
-# Roda o JXA de verdade, sem abrir janela: os modos --visible e
-# --parse-buttons existem exatamente para isso.
+# Roda o JXA de verdade sem mostrar janela: --visible e --parse-buttons nao
+# abrem nenhuma, e --simulate abre o painel real totalmente transparente e o
+# alimenta com cliques e teclas pela mesma fila de eventos do mouse.
 
 load helpers
 
@@ -10,7 +11,8 @@ setup() {
   copy_skill
   # Sem os modos de teste, o dialog.js trataria os argumentos como um dialogo
   # de verdade e abriria uma janela modal na tela de quem roda a suite.
-  grep -q -- "--visible" "$WORK/skill/dialog.js" && grep -q -- "--parse-buttons" "$WORK/skill/dialog.js" || {
+  grep -q -- "--visible" "$WORK/skill/dialog.js" && grep -q -- "--parse-buttons" "$WORK/skill/dialog.js" \
+    && grep -q -- "--simulate" "$WORK/skill/dialog.js" || {
     echo "dialog.js sem modo de teste: rodar abriria janelas reais" >&2
     return 1
   }
@@ -71,4 +73,53 @@ jxa() { /usr/bin/osascript -l JavaScript "$WORK/skill/dialog.js" "$@"; }
   [ "$(echo "$output" | jq -r '.[1].token')" = "always" ]
   [ "$(echo "$output" | jq -r '.[1].keyEquivalent')" = "" ]
   [ "$(echo "$output" | jq -r '.[2].token')" = "deny" ]
+}
+
+# --simulate: o painel de verdade, transparente, com eventos sinteticos.
+BUTTONS="Aprovar::approve|Negar:n:deny|Ir para a sessao:i:editor|Fechar (Esc):esc:ignore"
+sim() { jxa --simulate "$BUTTONS" "$1"; }
+
+@test "dialog: clique em cada botao chega ao laco de eventos" {
+  # O laco pedia eventos com NSEventMaskAny, que o JXA arredonda para 2^63:
+  # nenhum evento casava e o painel ignorava todo clique.
+  i=0
+  for token in approve deny editor ignore; do
+    run sim "click:$i"
+    [ "$status" -eq 0 ]
+    [ "$(echo "$output" | jq -r .token)" = "$token" ] || { echo "botao $i: $output"; return 1; }
+    i=$((i + 1))
+  done
+}
+
+@test "dialog: tecla sem clique nao aperta nada nem rouba o teclado" {
+  for key in n i esc a; do
+    run sim "key:$key"
+    [ "$status" -eq 0 ]
+    [ "$(echo "$output" | jq -r .token)" = "" ] || { echo "$key: $output"; return 1; }
+    [ "$(echo "$output" | jq -r .key)" = "false" ]
+    [ "$(echo "$output" | jq -r .active)" = "false" ]
+  done
+}
+
+@test "dialog: depois de clicar no painel, N, I e Esc funcionam" {
+  run sim "click:panel,key:n"
+  [ "$(echo "$output" | jq -r .token)" = "deny" ]
+  run sim "click:panel,key:N"
+  [ "$(echo "$output" | jq -r .token)" = "deny" ]
+  run sim "click:panel,key:i"
+  [ "$(echo "$output" | jq -r .token)" = "editor" ]
+  run sim "click:panel,key:esc"
+  [ "$(echo "$output" | jq -r .token)" = "ignore" ]
+}
+
+@test "dialog: clicar na caixa do comando nao faz ela engolir o atalho" {
+  # A caixa do comando vira first responder e comeria a letra.
+  run sim "click:detail,key:n"
+  [ "$(echo "$output" | jq -r .token)" = "deny" ]
+}
+
+@test "dialog: nenhuma tecla aprova, nem depois de clicar no painel" {
+  run sim "click:panel,key:a"
+  [ "$status" -eq 0 ]
+  [ "$(echo "$output" | jq -r .token)" = "" ]
 }

@@ -21,9 +21,13 @@
 // means "no answer" and the caller must treat it as a no-op. The caller also
 // owns the timeout, and kills this process when it expires.
 //
-// Test modes, which never open a window:
+// Test modes, which never show a window:
 //   dialog.js --visible <text>          what the detail box would display
 //   dialog.js --parse-buttons <buttons> the parsed button specs, as JSON
+//   dialog.js --simulate <buttons> <steps>
+//                                       the real panel and event loop, fully
+//                                       transparent, fed the clicks and keys
+//                                       in <steps> (see post); prints JSON
 ObjC.import('Cocoa');
 
 var WIDTH = 520;
@@ -148,9 +152,7 @@ function buildPanel(title, body, iconPath, buttons, detail) {
   var views = buttons.map(function (spec, i) {
     var button = $.NSButton.buttonWithTitleTargetAction(spec.label, target, 'pick:');
     button.tag = i;
-    // A letter only when the label has one; Return never picks anything.
-    button.keyEquivalent = spec.escape ? '\u001b' : spec.keyEquivalent;
-    button.keyEquivalentModifierMask = 0;
+    // No keyEquivalent: shortcuts are matched in waitForChoice (see shortcut).
     if (spec.underlineAt >= 0) button.attributedTitle = underlined(spec.label, spec.underlineAt);
     return button;
   });
@@ -210,12 +212,100 @@ function buildPanel(title, body, iconPath, buttons, detail) {
     y -= 8;
   });
 
-  return { panel: panel, views: views, target: target };
+  return { panel: panel, views: views, target: target, detail: detailBox };
+}
+
+// NSEventMaskAny is NSUIntegerMax, more than a JS number holds: the bridge
+// rounds it to 2^63, a mask no event matches, and the panel never saw a click
+// or a key. -1 reaches Cocoa with every bit set.
+var ANY_EVENT = -1;
+var LEFT_MOUSE_DOWN = 1;
+var KEY_DOWN = 10;
+var MODIFIERS = (1 << 18) | (1 << 19) | (1 << 20); // control, option, command
+
+// The button <event> presses from the keyboard, or -1. Matched here and not
+// through NSButton's keyEquivalent: once the panel has the keyboard, the
+// command box is its first responder and swallows a plain letter.
+// (The bridge hands an event's type and flags over as strings.)
+function shortcut(event, panel, buttons) {
+  if (Number(event.type) !== KEY_DOWN || !panel.isKeyWindow || (Number(event.modifierFlags) & MODIFIERS)) return -1;
+  var typed = ObjC.unwrap(event.charactersIgnoringModifiers).toLowerCase();
+  for (var i = 0; i < buttons.length; i++) {
+    var key = buttons[i].escape ? '\u001b' : buttons[i].keyEquivalent;
+    if (key && typed === key) return i;
+  }
+  return -1;
+}
+
+// No runModal: a modal session makes the panel key, which is exactly the
+// keyboard grab this panel exists to avoid. Events are pumped by hand until a
+// button is pressed, the panel is closed, or <deadline> (epoch ms) passes.
+function waitForChoice(app, panel, buttons, deadline) {
+  while (choice < 0 && panel.isVisible && !(deadline && Date.now() > deadline)) {
+    var event = app.nextEventMatchingMaskUntilDateInModeDequeue(
+      ANY_EVENT, $.NSDate.dateWithTimeIntervalSinceNow(0.25), $.NSDefaultRunLoopMode, true);
+    if (event.isNil()) continue;
+    // The panel takes the keyboard only when clicked, anywhere on it: from
+    // then on the shortcuts work. Never by itself.
+    if (Number(event.type) === LEFT_MOUSE_DOWN && Number(event.windowNumber) === Number(panel.windowNumber)) {
+      panel.makeKeyWindow;
+    }
+    var pressed = shortcut(event, panel, buttons);
+    if (pressed >= 0) choice = pressed;
+    else app.sendEvent(event);
+  }
+}
+
+// Queues what a user would do, as the events the window server would send:
+// "click:<button index>", "click:detail" (the command box), "click:panel"
+// (bare background) or "key:<char|esc>".
+function post(app, built, step) {
+  var parts = step.split(':');
+  var window = built.panel.windowNumber;
+  var now = $.NSProcessInfo.processInfo.systemUptime;
+  if (parts[0] === 'key') {
+    var key = parts[1] === 'esc' ? '\u001b' : parts[1];
+    [10, 11].forEach(function (type) { // key down, key up
+      app.postEventAtStart($.NSEvent.keyEventWithTypeLocationModifierFlagsTimestampWindowNumberContextCharactersCharactersIgnoringModifiersIsARepeatKeyCode(
+        type, $.NSMakePoint(0, 0), 0, now, window, $(), key, key, false, 0), false);
+    });
+    return;
+  }
+  var at = $.NSMakePoint(4, 4); // a corner no control covers
+  if (parts[1] !== 'panel') {
+    var view = parts[1] === 'detail' ? built.detail : built.views[Number(parts[1])];
+    var size = view.bounds.size;
+    at = view.convertPointToView($.NSMakePoint(size.width / 2, size.height / 2), $());
+  }
+  [1, 2].forEach(function (type) { // left mouse down, left mouse up
+    app.postEventAtStart($.NSEvent.mouseEventWithTypeLocationModifierFlagsTimestampWindowNumberContextEventNumberClickCountPressure(
+      type, at, 0, now, window, $(), 0, 1, 1), false);
+  });
 }
 
 function run(argv) {
   if (argv[0] === '--visible') return visible(argv[1] || '');
   if (argv[0] === '--parse-buttons') return JSON.stringify(parseButtons(argv[1] || ''));
+
+  var app = $.NSApplication.sharedApplication;
+  // Accessory: no Dock icon. And this app is never activated: the panel is
+  // shown with orderFrontRegardless, never made key.
+  app.setActivationPolicy($.NSApplicationActivationPolicyAccessory);
+
+  if (argv[0] === '--simulate') {
+    var spec = parseButtons(argv[1] || 'OK:o:ok');
+    var test = buildPanel('test', '', '', spec, 'detail');
+    // Transparent and click-through: nothing shows, and the real mouse cannot
+    // reach it while it is up.
+    test.panel.alphaValue = 0;
+    test.panel.ignoresMouseEvents = true;
+    test.panel.orderFrontRegardless;
+    (argv[2] || '').split(',').filter(Boolean).forEach(function (step) { post(app, test, step); });
+    waitForChoice(app, test.panel, spec, Date.now() + 2000);
+    var result = { token: choice >= 0 ? spec[choice].token : '', active: app.isActive, key: test.panel.isKeyWindow };
+    test.panel.orderOut(null);
+    return JSON.stringify(result);
+  }
 
   var title = argv[0] || 'Claude Code';
   var body = argv[1] || '';
@@ -223,23 +313,10 @@ function run(argv) {
   var buttons = parseButtons(argv[3] || 'OK:o:ok');
   var detail = argv[4] || '';
 
-  var app = $.NSApplication.sharedApplication;
-  // Accessory: no Dock icon. And this app is never activated: the panel is
-  // shown with orderFrontRegardless, never made key.
-  app.setActivationPolicy($.NSApplicationActivationPolicyAccessory);
-
   var built = buildPanel(title, body, iconPath, buttons, detail);
   built.panel.center;
   built.panel.orderFrontRegardless;
-
-  // No runModal: a modal session makes the panel key, which is exactly the
-  // keyboard grab this panel exists to avoid. Events are pumped by hand until
-  // a button is clicked or the panel is closed.
-  while (choice < 0 && built.panel.isVisible) {
-    var event = app.nextEventMatchingMaskUntilDateInModeDequeue(
-      $.NSEventMaskAny, $.NSDate.dateWithTimeIntervalSinceNow(0.25), $.NSDefaultRunLoopMode, true);
-    if (!event.isNil()) app.sendEvent(event);
-  }
+  waitForChoice(app, built.panel, buttons);
   built.panel.orderOut(null);
 
   if (choice >= 0 && choice < buttons.length) return buttons[choice].token;

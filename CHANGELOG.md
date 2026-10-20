@@ -3,6 +3,20 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.9.1] — 2026-10-20
+
+### Fixed
+- **The approval panel ignored every click and key.** Its event loop asked Cocoa for
+  `NSEventMaskAny`, which is `NSUIntegerMax`: JXA rounds that to 2^63, a mask no event
+  matches, so the buttons, the close box and the shortcuts were all dead and the dialog only
+  ever ended by timing out (back to the terminal's own prompt). The 1.9.0 check pressed the
+  button with `performClick`, which skips the event queue. `dialog.js --simulate` now drives
+  the real panel, fully transparent, with clicks and keys through that same queue, and the
+  suite covers every button and shortcut.
+- **N, I and Esc did nothing after clicking into the panel**: the command box became first
+  responder and swallowed the letter. Shortcuts are matched in the event loop now, and a click
+  anywhere on the panel hands it the keyboard. Before that click, keys still go to your app.
+
 ## [1.9.0] — 2026-10-20
 
 The exact VSCode tab, and an approval dialog that leaves your keyboard alone. Closes #3.

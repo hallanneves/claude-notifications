@@ -1,5 +1,8 @@
 # Configuração opcional do claude-notifications.
-# Para ativar: copie este arquivo para ~/.claude/skills/notify/notify.conf e edite.
+# Para ativar: copie este arquivo para
+#   ~/Library/Application Support/claude-notifications/notify.conf
+# e edite (fica fora do plugin, então sobrevive às atualizações).
+# Optional config: copy this file to the path above and edit it.
 # Sintaxe de shell (é carregado com `source` pelos scripts).
 
 # Idioma da interface: "en" ou "pt". Sem isto, o idioma vem do locale do macOS
@@ -36,10 +39,6 @@
 #NOTIFY_SOUND_FAIL=Basso       # /notify --fail
 #NOTIFY_SOUND_INFO=Glass
 
-# Onde fica o estado (silêncio, lembretes, logs). Padrão:
-# ~/Library/Application Support/claude-notifications
-#NOTIFY_STATE_DIR="$HOME/Library/Application Support/claude-notifications"
-
 # Apps extras (separados por vírgula, nome exato do processo via lsappinfo) que,
 # quando em primeiro plano, suprimem o banner de "trabalho pronto" e o dialog de
 # aprovação — além da lista padrão de editores/terminais.
@@ -66,13 +65,6 @@
 # sai em silêncio por design, então é assim que se enxerga o que houve).
 # Logs one line per hook call to .debug.log.
 #NOTIFY_DEBUG=1
-
-# Checagem de versão nova (banner clicável que atualiza). 0 desliga.
-#NOTIFY_UPDATE_CHECK=0
-# Intervalo mínimo entre checagens, em segundos (padrão: 86400 = 1 dia).
-#NOTIFY_UPDATE_INTERVAL=86400
-# Repositório consultado — troque para acompanhar um fork.
-#NOTIFY_UPDATE_REPO="https://github.com/hallanneves/claude-notifications.git"
 
 # Clique na notificação: abrir a PASTA do projeto no editor (foca a janela certa
 # quando você tem vários projetos abertos) ou só trazer o app para a frente.

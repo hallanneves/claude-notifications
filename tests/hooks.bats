@@ -491,14 +491,18 @@ approval_with_suggestion() {
   # A sessao roda no Terminal; o usuario esta no Slack e, com a janela aberta,
   # volta para o Terminal: o prompt dela assume, nada e aprovado.
   export __CFBundleIdentifier="com.apple.Terminal" FAKE_FRONT_FILE="$WORK/front"
-  export OSA_RESULT="approve" OSA_DELAY=8
+  export OSA_RESULT="approve" OSA_DELAY=20
   echo Slack > "$WORK/front"
-  ( sleep 1; echo Terminal > "$WORK/front" ) &
+  # Volta para o Terminal so depois que a janela abriu: o hook leva de 1 a 4s
+  # ate ela, conforme a carga da maquina.
+  ( for _ in $(seq 1 150); do [ -f "$WORK/osascript.calls" ] && break; sleep 0.1; done
+    echo Terminal > "$WORK/front" ) &
   start="$(date +%s)"
   run bash -c 'echo "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"ls\"}}" | "$0"' "$WORK/skill/approval-hook.sh"
   elapsed=$(( $(date +%s) - start ))
   [ "$status" -eq 0 ]
   [ -z "$output" ]
-  [ "$elapsed" -lt 6 ]
+  # Fechou bem antes dos 20s em que a janela "responderia".
+  [ "$elapsed" -lt 14 ]
   [[ "$(cat "$WORK/osascript.calls")" == *"dialog.js"* ]]
 }

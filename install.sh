@@ -1,13 +1,20 @@
 #!/bin/bash
-# Installer for the /notify skill + notification hooks (Claude Code, macOS).
-# Safe to re-run: hooks already pointing at the skill are left alone, hooks
-# from other tools are never overwritten (per-event manual-merge warning).
+# install.sh — installs claude-notifications as a Claude Code plugin, sets up
+# what it needs outside Claude Code, and retires a pre-2.0 install.
+#
+# Since 2.0 the plugin system installs and updates it; this only drives the
+# `claude` CLI, so it also runs unattended: a 1.x install updates itself by
+# running the new tag's install.sh from a throwaway clone.
+#
+# usage: install.sh           # the plugin from GitHub (hallanneves/claude-notifications)
+#        install.sh --local   # from this checkout, loaded in place (development)
 set -euo pipefail
 
 cd "$(dirname "$0")"
-# shellcheck source=skill/notify-lib.sh
-. ./skill/notify-lib.sh
+# shellcheck source=skills/notify/notify-lib.sh
+. ./skills/notify/notify-lib.sh
 load_notify_conf
+with_tool_path
 
 if [ "$(uname)" != "Darwin" ]; then
   echo "❌ $L_INS_NEED_MACOS"
@@ -15,94 +22,33 @@ if [ "$(uname)" != "Darwin" ]; then
 fi
 command -v jq >/dev/null 2>&1 || { echo "❌ $L_INS_NEED_JQ"; exit 1; }
 
-DEST="$HOME/.claude/skills/notify"
-mkdir -p "$DEST"
-cp -f skill/SKILL.md skill/notify.conf.example skill/*.sh skill/*.js "$DEST/"
-mkdir -p "$DEST/lang"
-cp -f skill/lang/*.sh "$DEST/lang/"
-# The approval dialog sets this as its NSAlert icon; without it the alert
-# borrows osascript's generic document icon.
-cp -f assets/claude-logo.png "$DEST/claude-logo.png"
-cp -f VERSION "$DEST/VERSION"
-# update.sh installs from a throwaway clone of the advertised tag, so the path
-# this was installed from is no longer recorded (older installs left one).
-rm -f "$DEST/.source-repo"
-chmod +x "$DEST"/*.sh
-printf '✅ '; say "$L_INS_SKILL_OK" "$DEST"
-say "$L_INS_CONF_HINT" "$DEST/notify.conf.example"
+# A checkout under a throwaway clone would vanish; only --local points here.
+SOURCE="$PLUGIN_REPO"
+[ "${1:-}" = "--local" ] && SOURCE="$PWD"
 
-SETTINGS="$HOME/.claude/settings.json"
-[ -f "$SETTINGS" ] || echo '{}' > "$SETTINGS"
-
-# One timestamped backup per run, taken only if we are about to modify.
-BACKUP=""
-ensure_backup() {
-  [ -n "$BACKUP" ] && return 0
-  BACKUP="${SETTINGS}.bak.$(date +%Y%m%d-%H%M%S)"
-  cp "$SETTINGS" "$BACKUP"
+CLAUDE="$(claude_bin)" || {
+  echo "❌ $L_INS_NO_CLAUDE"
+  say "$L_INS_MANUAL" "$PLUGIN_NAME" "$PLUGIN_REPO"
+  exit 1
 }
 
-MANUAL=""
-for EV in Notification Stop PermissionRequest UserPromptSubmit; do
-  if ! jq -e --arg ev "$EV" '.hooks[$ev]' "$SETTINGS" >/dev/null 2>&1; then
-    ensure_backup
-    tmp="$(mktemp)"
-    jq -s --arg ev "$EV" \
-      '.[0].hooks = ((.[0].hooks // {}) + {($ev): .[1].hooks[$ev]}) | .[0]' \
-      "$SETTINGS" hooks.json > "$tmp"
-    jq -e . "$tmp" >/dev/null
-    mv "$tmp" "$SETTINGS"
-    printf '✅ '; say "$L_INS_HOOK_ADDED" "$EV" "$SETTINGS"
-  elif jq -e --arg ev "$EV" '.hooks[$ev] | tostring | contains("/skills/notify/")' "$SETTINGS" >/dev/null 2>&1; then
-    printf '✅ '; say "$L_INS_HOOK_PRESENT" "$EV"
-  else
-    MANUAL="$MANUAL $EV"
-  fi
-done
-if [ -n "$MANUAL" ]; then
-  printf '⚠️  '; say "$L_INS_HOOK_MANUAL" "$MANUAL"
-  echo "$L_INS_HOOK_MANUAL2"
+# Nothing of the old install is touched before the plugin is in: a failure
+# here leaves it working.
+if ! "$CLAUDE" plugin install "$PLUGIN_NAME" --marketplace "$SOURCE" --scope user; then
+  printf '❌ '; say "$L_INS_PLUGIN_FAIL" "$PLUGIN_ID"
+  say "$L_INS_MANUAL" "$PLUGIN_NAME" "$PLUGIN_REPO"
+  exit 1
 fi
-[ -n "$BACKUP" ] && say "$L_INS_BACKUP" "$BACKUP"
+printf '✅ '; say "$L_INS_PLUGIN_OK" "$PLUGIN_ID" "$SOURCE"
 
-if command -v terminal-notifier >/dev/null 2>&1; then
-  ./install-notifier-app.sh || echo "⚠️  $L_INS_APP_FAIL"
-else
-  echo "ℹ️  $L_INS_TN_HINT"
-  echo "$L_INS_TN_HINT2"
-fi
+./skills/notify/setup.sh || true
+./skills/notify/migrate.sh || true
 
-# The editor bridge (vscode-bridge/): what lets a click reach the exact Claude
-# tab or integrated terminal instead of just the project's window. Installed
-# into each editor whose CLI is on PATH, and only when its version changed.
-# NOTIFY_BRIDGE=0 skips it.
-install_bridge() {
-  local cli="$1" want have tmp
-  command -v "$cli" >/dev/null 2>&1 || return 0
-  want="hallanneves.claude-notify-bridge@$(jq -r .version vscode-bridge/package.json)"
-  have="$("$cli" --list-extensions --show-versions 2>/dev/null \
-    | grep -i '^hallanneves\.claude-notify-bridge@' || true)"
-  if [ "$(printf '%s' "$have" | tr '[:upper:]' '[:lower:]')" = "$want" ]; then
-    printf '✅ '; say "$L_INS_BRIDGE_PRESENT" "$cli"
-    return 0
-  fi
-  tmp="$(mktemp -d)"
-  if ./vscode-bridge/build-vsix.sh "$tmp/claude-notify-bridge.vsix" \
-    && "$cli" --install-extension "$tmp/claude-notify-bridge.vsix" --force >/dev/null 2>&1; then
-    printf '✅ '; say "$L_INS_BRIDGE_OK" "$cli"
-    echo "$L_INS_BRIDGE_RELOAD"
-  else
-    printf '⚠️  '; say "$L_INS_BRIDGE_FAIL" "$cli"
-  fi
-  rm -rf "$tmp"
-}
-if [ "${NOTIFY_BRIDGE:-1}" != "0" ]; then
-  install_bridge code
-  install_bridge cursor
-fi
+# A 1.x install runs this from a click, with no terminal to read: the banner
+# is the only report it gets.
+./skills/notify/notify.sh --done "$(say "$L_INS_DONE" "$(cat VERSION)")" >/dev/null 2>&1 || true
 
 echo
-printf '🔔 '; say "$L_INS_TEST" "$DEST"
 echo "➡️  $L_INS_RESTART"
 echo "➡️  $L_INS_NO_BANNER"
 echo "$L_INS_NO_BANNER2"

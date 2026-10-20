@@ -58,3 +58,31 @@ teardown() { common_teardown; }
   run "$WORK/skill/doctor.sh"
   [[ "$output" == *"negou acesso ao Terminal"* ]]
 }
+
+@test "doctor: plugin instalado mostra de onde veio e o auto-update desligado" {
+  fake_ps "100 1 ttys005 /bin/bash"
+  mkdir -p "$HOME/.claude/plugins"
+  echo '{"version":2,"plugins":{"notify@claude-notifications":[{"scope":"user"}]}}' \
+    > "$HOME/.claude/plugins/installed_plugins.json"
+  echo '{"claude-notifications":{"source":{"source":"github","repo":"hallanneves/claude-notifications"}}}' \
+    > "$HOME/.claude/plugins/known_marketplaces.json"
+  run "$WORK/skill/doctor.sh"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"notify@claude-notifications de hallanneves/claude-notifications"* ]]
+  [[ "$output" == *"Enable auto-update"* ]]
+}
+
+@test "doctor: sem o plugin, diz como instalar" {
+  fake_ps "100 1 ttys005 /bin/bash"
+  run "$WORK/skill/doctor.sh"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"não instalado (/plugin install notify"* ]]
+}
+
+@test "doctor: instalacao antiga ligada manda rodar /notify migrate" {
+  fake_ps "100 1 ttys005 /bin/bash"
+  make_legacy_install
+  run "$WORK/skill/doctor.sh"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"/notify migrate"* ]]
+}

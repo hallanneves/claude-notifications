@@ -8,43 +8,137 @@ DEDICATED_APP_NAME="Claude Code Notifier"
 DEDICATED_APP="$HOME/Applications/$DEDICATED_APP_NAME.app"
 DEDICATED_BUNDLE_ID="com.github.hallanneves.claude-notifier"
 
-# Where check-update.sh looks for newer tags and update.sh clones from when the
-# original working copy is gone. Override with NOTIFY_UPDATE_REPO to track a
-# fork. load_notify_conf may reset this, so it is only a default.
-NOTIFY_UPDATE_REPO_DEFAULT="https://github.com/hallanneves/claude-notifications.git"
-
-# Runtime state (mute stamp, reminder pids, per-session stamps, logs) lives
-# outside the code: an install or update replaces the skill directory, and
-# state kept there was lost with it. Inside a Claude Code plugin it goes to the
-# plugin's data dir, which survives updates. NOTIFY_STATE_DIR overrides.
-if [ -z "${NOTIFY_STATE_DIR:-}" ]; then
-  if [ -n "${CLAUDE_PLUGIN_DATA:-}" ]; then
-    NOTIFY_STATE_DIR="$CLAUDE_PLUGIN_DATA"
-  else
-    NOTIFY_STATE_DIR="$HOME/Library/Application Support/claude-notifications"
-  fi
-fi
+# Runtime state (mute stamp, reminder pids, per-session stamps, logs) and the
+# optional notify.conf live outside the code, which a plugin update replaces.
+# Not in ${CLAUDE_PLUGIN_DATA}: only hook processes see that variable, and the
+# same files are read by the commands the skill runs, by a notification's
+# click and by the VSCode bridge. NOTIFY_STATE_DIR (environment) overrides.
+NOTIFY_STATE_DIR="${NOTIFY_STATE_DIR:-$HOME/Library/Application Support/claude-notifications}"
 MUTE_FILE="${MUTE_FILE:-$NOTIFY_STATE_DIR/.mute-until}"
+NOTIFY_CONF="$NOTIFY_STATE_DIR/notify.conf"
+
+# The plugin as `claude plugin` and ~/.claude/plugins/*.json name it.
+PLUGIN_NAME="notify"
+MARKETPLACE_NAME="claude-notifications"
+PLUGIN_ID="$PLUGIN_NAME@$MARKETPLACE_NAME"
+PLUGIN_REPO="hallanneves/claude-notifications"
+
+# Where versions before 2.0 were installed, with their hooks written into
+# ~/.claude/settings.json. migrate.sh retires both.
+LEGACY_SKILL_DIR="$HOME/.claude/skills/notify"
+# What every hook command of such an install contains.
+LEGACY_HOOK_MARK=".claude/skills/notify/"
+
+legacy_hooks_present() {
+  jq -e --arg m "$LEGACY_HOOK_MARK" '(.hooks // {}) | tostring | contains($m)' \
+    "$HOME/.claude/settings.json" >/dev/null 2>&1
+}
+
+# Claude Code runs a plugin's hooks next to the ones in settings.json and never
+# deduplicates the two, so with a pre-2.0 install still wired every event would
+# notify twice. A hook run by the plugin (Claude Code exports
+# CLAUDE_PLUGIN_ROOT to those only) stands down until migrate.sh has run.
+plugin_yields() {
+  [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && legacy_hooks_present
+}
+
+# Removes a pre-2.0 install's hook entries from ~/.claude/settings.json after a
+# timestamped backup, keeping every other tool's. Prints the backup's path;
+# returns 1 when there was nothing to remove or the edit failed.
+strip_legacy_hooks() {
+  local settings="$HOME/.claude/settings.json" backup tmp
+  legacy_hooks_present || return 1
+  backup="$settings.bak.$(date +%Y%m%d-%H%M%S)"
+  cp "$settings" "$backup" || return 1
+  tmp="$(mktemp)"
+  if jq --arg m "$LEGACY_HOOK_MARK" '
+      .hooks |= with_entries(.value |= map(select(tostring | contains($m) | not)))
+      | .hooks |= with_entries(select(.value | length > 0))
+      | if .hooks == {} then del(.hooks) else . end
+    ' "$settings" > "$tmp" && jq -e . "$tmp" >/dev/null 2>&1; then
+    mv "$tmp" "$settings"
+    printf '%s' "$backup"
+    return 0
+  fi
+  rm -f "$tmp"
+  return 1
+}
+
+plugin_installed() {
+  jq -e --arg id "$PLUGIN_ID" '(.plugins[$id] // []) | length > 0' \
+    "$HOME/.claude/plugins/installed_plugins.json" >/dev/null 2>&1
+}
+
+# A field of the marketplace's record in known_marketplaces.json, e.g.
+# ".source.source" ("github", or "directory" for a checkout loaded in place).
+marketplace_field() {
+  jq -r --arg m "$MARKETPLACE_NAME" ".[\$m]$1 // empty" \
+    "$HOME/.claude/plugins/known_marketplaces.json" 2>/dev/null
+}
+
+# Claude Code adds third-party marketplaces with auto-update off: installed
+# from GitHub, the plugin then never moves past the version first installed.
+autoupdate_off() {
+  [ "$(marketplace_field .source.source)" = "github" ] && [ "$(marketplace_field .autoUpdate)" != "true" ]
+}
+
+# The `claude` CLI, also where a notification click or a hook's PATH misses it.
+# NOTIFY_CLAUDE pins it (the tests do, so no run can reach a real one).
+claude_bin() {
+  local c
+  if [ -n "${NOTIFY_CLAUDE:-}" ]; then
+    [ -x "$NOTIFY_CLAUDE" ] || return 1
+    printf '%s' "$NOTIFY_CLAUDE"
+    return 0
+  fi
+  for c in "$(command -v claude 2>/dev/null)" "$HOME/.local/bin/claude" \
+    "$HOME/.claude/local/claude" /opt/homebrew/bin/claude /usr/local/bin/claude; do
+    [ -n "$c" ] && [ -x "$c" ] && { printf '%s' "$c"; return 0; }
+  done
+  return 1
+}
+
+# A notification's click (how a 1.x install runs its update) gets launchd's
+# PATH, without Homebrew's tools or the editors' CLIs. The scripts that need
+# them append the usual places; NOTIFY_EXTRA_PATH replaces the list (the tests
+# empty it, so no run can reach a real terminal-notifier or editor).
+with_tool_path() {
+  local apps="/Applications/Visual Studio Code.app/Contents/Resources/app/bin"
+  apps="$apps:/Applications/Cursor.app/Contents/Resources/app/bin"
+  PATH="$PATH${NOTIFY_EXTRA_PATH-:/opt/homebrew/bin:/usr/local/bin:$apps}"
+}
+
+# True when setup.sh has not run for the version at <root> yet, or the
+# notifier app it made is gone while terminal-notifier could rebuild it.
+setup_needed() {
+  [ "$(cat "$NOTIFY_STATE_DIR/.setup-version" 2>/dev/null)" != "$(cat "$1/VERSION" 2>/dev/null)" ] \
+    && return 0
+  [ ! -d "$DEDICATED_APP" ] && command -v terminal-notifier >/dev/null 2>&1
+}
 
 # Versions up to 1.7 kept their state next to the skill. Moved once, on the
 # first run that finds no state directory, so an active mute or a running
 # reminder survives the upgrade.
 migrate_legacy_state() {
-  local legacy="$HOME/.claude/skills/notify" f
+  local f
   mkdir -p "$NOTIFY_STATE_DIR" 2>/dev/null || return 0
-  [ -d "$legacy" ] || return 0
-  for f in "$legacy"/.mute-until "$legacy"/.repeat.pids "$legacy"/.update-check \
-    "$legacy"/.update.log "$legacy"/.debug.log "$legacy"/.announced-* "$legacy"/.tcc-hint-*; do
+  [ -d "$LEGACY_SKILL_DIR" ] || return 0
+  for f in "$LEGACY_SKILL_DIR"/.mute-until "$LEGACY_SKILL_DIR"/.repeat.pids \
+    "$LEGACY_SKILL_DIR"/.debug.log "$LEGACY_SKILL_DIR"/.announced-* "$LEGACY_SKILL_DIR"/.tcc-hint-*; do
     [ -f "$f" ] && mv -n "$f" "$NOTIFY_STATE_DIR/" 2>/dev/null
   done
   return 0
 }
 
-# Optional user config, shared by every script that sources this lib.
+# Optional user config, shared by every script that sources this lib. Until
+# migrate.sh moves it, a legacy install's notify.conf still counts.
 load_notify_conf() {
   # shellcheck disable=SC1090,SC1091
-  [ -f "$HOME/.claude/skills/notify/notify.conf" ] && . "$HOME/.claude/skills/notify/notify.conf"
-  : "${NOTIFY_UPDATE_REPO:=$NOTIFY_UPDATE_REPO_DEFAULT}"
+  if [ -f "$NOTIFY_CONF" ]; then
+    . "$NOTIFY_CONF"
+  elif [ -f "$LEGACY_SKILL_DIR/notify.conf" ]; then
+    . "$LEGACY_SKILL_DIR/notify.conf"
+  fi
   [ -d "$NOTIFY_STATE_DIR" ] || migrate_legacy_state
   # After the conf, so NOTIFY_LANG set there wins over the system locale.
   load_lang

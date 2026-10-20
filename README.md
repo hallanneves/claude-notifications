@@ -8,10 +8,10 @@
 > (Ajustes → Idioma e Região) e você força com `NOTIFY_LANG="pt"` ou `"en"` no `notify.conf`.
 > Os exemplos deste README mostram os textos em português.
 
-Notificações nativas do macOS (estilo Slack) para o **Claude Code**: uma skill `/notify` +
-três hooks que avisam com **banner com o ícone do Claude e um som próprio para cada tipo de
-evento** — inclusive um **dialog com botão de Aprovar/Negar** quando o Claude precisa de
-permissão e você está longe do editor.
+Notificações nativas do macOS (estilo Slack) para o **Claude Code**, como **plugin**: uma
+skill `/notify` + hooks que avisam com **banner com o ícone do Claude e um som próprio para
+cada tipo de evento** — inclusive um **painel com Aprovar/Negar** quando o Claude precisa de
+permissão e você não está olhando — e um clique que volta para a **sessão exata**.
 
 ## O que você ganha
 
@@ -73,62 +73,80 @@ Comportamentos inteligentes:
   Aba que sumiu cai no app que hospeda a sessão: uma sessão no Terminal ou no herdr nunca abre
   o VSCode. Se o macOS negar a permissão de Automação, chega **um** aviso com um clique para os
   Ajustes. `NOTIFY_ACTIVATE_PATH=never` volta a só focar o app.
-- **Silenciar para focar**: `mute.sh 30m` cala tudo por meia hora — banners, lembretes, aviso
-  de atualização e **também a janela de aprovação**, que é a interrupção mais agressiva de
-  todas. Enquanto silenciado, a permissão cai no prompt normal do terminal, que espera
+- **Silenciar para focar**: `mute.sh 30m` cala tudo por meia hora — banners, lembretes e
+  **também a janela de aprovação**, que é a interrupção mais agressiva de todas. Enquanto silenciado, a permissão cai no prompt normal do terminal, que espera
   quietinho. O Focus do macOS esconde banners, mas não segura um dialog modal.
 - **Nada de segredo na tela de bloqueio**: o banner de aprovação diz qual ferramenta o
   Claude quer usar e a descrição que ele mesmo escreveu do comando, nunca o comando. O comando completo fica na janela, que exige sessão desbloqueada — o
   macOS mostra prévia de notificação com a tela travada. `NOTIFY_BANNER_DETAIL=full` volta ao
   comportamento antigo.
 - **Lembretes periódicos**: `repeat.sh` roda detached e sobrevive ao fim da sessão.
-- **Aviso de versão nova**: uma vez por dia, o fim de turno checa se há uma tag mais recente
-  no repositório. Se houver, chega um banner **clicável** que abre uma janela com
-  **I̲nstalar / Ver no G̲itHub / Cancelar (Esc)** — clicar nunca instala nada sozinho: isto é
-  código aberto e você tem o direito de ler o que vai rodar antes. Silencioso quando já está
-  atualizado, e desligável com `NOTIFY_UPDATE_CHECK=0`.
+- **Atualização pelo sistema de plugins** do Claude Code (veja [Atualizações](#atualizações)).
 
 ## Instalação
 
-Requisitos: macOS, [Claude Code](https://claude.com/claude-code), `jq` (incluso no macOS 15+).
+Requisitos: macOS, [Claude Code](https://claude.com/claude-code) 2.1.275 ou mais novo e `jq`
+(incluso no macOS 15+). Recomendado: `brew install terminal-notifier` (ícone do Claude e
+clique útil).
 
-```bash
-git clone git@github.com:hallanneves/claude-notifications.git
-cd claude-notifications
-brew install terminal-notifier   # recomendado (ícone + clique útil)
-./install.sh
+No Claude Code:
+
+```
+/plugin install notify --marketplace hallanneves/claude-notifications
 ```
 
-O instalador:
+Ou no terminal, `claude plugin install notify --marketplace hallanneves/claude-notifications`,
+ou ainda clonando o repo e rodando `./install.sh`, que faz o mesmo e já migra uma instalação
+1.x.
 
-1. Copia a skill para `~/.claude/skills/notify/` (vale para **todos** os projetos).
-2. Adiciona os hooks `Notification`, `Stop`, `PermissionRequest` e `UserPromptSubmit` (este
-   assíncrono: limpa os avisos da sessão que você respondeu e mede o turno) ao
-   `~/.claude/settings.json`,
-   **evento por evento**: eventos livres são adicionados, eventos que já apontam para a skill
-   são reconhecidos e deixados como estão (re-rodar o instalador é seguro — é assim que se
-   atualiza), e eventos com hooks **de outras ferramentas** nunca são sobrescritos — ele pede
-   merge manual com o [`hooks.json`](hooks.json) só para esses. Antes de qualquer alteração,
-   faz um backup timestampado (`settings.json.bak.<data>`).
-3. Se o terminal-notifier estiver instalado, cria o app **"Claude Code"** em `~/Applications`
-   com o ícone do Claude (roda o `install-notifier-app.sh`) e o abre uma vez, para o macOS
-   pedir a permissão de notificação (só na criação — atualizações não re-abrem o app).
-4. Se o `code` (ou o `cursor`) estiver no PATH, instala a **extensão ponte**
+Na primeira sessão depois de instalar, o plugin se prepara **em segundo plano**, uma vez por
+versão, e avisa numa mensagem:
+
+1. Se o terminal-notifier estiver instalado, cria o app **"Claude Code"** em `~/Applications`
+   com o ícone do Claude (`install-notifier-app.sh`) e o abre uma vez, para o macOS pedir a
+   permissão de notificação (só na criação: atualizações não reabrem o app).
+2. Se o `code` (ou o `cursor`) estiver no PATH, instala a **extensão ponte**
    ([`vscode-bridge/`](vscode-bridge)), que leva o clique até a aba do Claude ou o terminal
-   integrado certo. Recarregue as janelas já abertas (*Developer: Reload Window*).
-   `NOTIFY_BRIDGE=0` pula esta etapa.
+   integrado certo. `NOTIFY_BRIDGE=0` no `notify.conf` pula esta etapa.
 
 Depois:
 
-1. **Reinicie o Claude Code** (ou abra `/hooks`) para carregar os hooks.
-2. Clique em **Permitir** no prompt "Notificações de *Claude Code*".
-3. Dispare um teste: `~/.claude/skills/notify/notify.sh --done "Instalação concluída"`.
-   Se o banner não aparecer: **Ajustes do Sistema → Notificações → Claude Code**, ligue
-   "Permitir notificações" e deixe o estilo em **Banners** ou **Alertas**.
+1. Clique em **Permitir** no prompt "Notificações de *Claude Code*".
+2. Teste: `/notify instalação concluída`. Se o banner não aparecer: **Ajustes do Sistema →
+   Notificações → Claude Code**, ligue "Permitir notificações" e deixe o estilo em **Banners**
+   ou **Alertas**. `/notify doctor` diz o que falta.
 
 > Sem o terminal-notifier o fallback é `osascript`: funciona, mas o banner sai em nome do
 > Script Editor e clicar nele abre uma janela vazia do Script Editor (quirk do macOS para
 > notificações de CLI).
+
+### Atualizações
+
+O Claude Code adiciona marketplaces de terceiros com a **atualização automática desligada**.
+Para ligar: `/plugin` → **Marketplaces** → `claude-notifications` → **Enable auto-update**. A
+primeira sessão lembra disso uma vez, e o `/notify doctor` mostra o estado. Sem ligar, atualize
+quando quiser com `/plugin update notify@claude-notifications`. A versão nova vale a partir da
+próxima sessão (ou de `/reload-plugins`).
+
+### Vindo da 1.x
+
+A 1.x copiava a skill para `~/.claude/skills/notify` e escrevia os hooks no
+`~/.claude/settings.json`. O Claude Code roda os hooks de um plugin **ao lado** dos do
+`settings.json`, sem deduplicar; então, enquanto a 1.x estiver ligada, o plugin fica em espera
+(nada toca duas vezes) e cada sessão pede:
+
+```
+/notify migrate
+```
+
+Ele tira do `settings.json` **só** os hooks da 1.x (com backup timestampado; hooks de outras
+ferramentas ficam), move o `notify.conf` e o estado para
+`~/Library/Application Support/claude-notifications`, para os lembretes da cópia antiga e
+apaga `~/.claude/skills/notify`. Depois, **reinicie as sessões abertas**: elas começaram com
+os hooks antigos.
+
+O `./install.sh` da 2.0 faz instalação e migração de uma vez, e é ele que o aviso de
+atualização da 1.x roda: quem clicar em **Instalar** chega na 2.0 já migrado.
 
 ### O app "Claude Code" — por que ele existe
 
@@ -150,6 +168,8 @@ use o terminal-notifier — e `brew upgrade` desfaz. Com o app dedicado, o logo 
 De brinde, ele ganha uma entrada própria em Ajustes → Notificações ("Claude Code"), com som,
 estilo e Foco independentes.
 
+Num clone do repo:
+
 ```bash
 ./install-notifier-app.sh            # cria (preserva o existente e sua autorização)
 ./install-notifier-app.sh --force    # recria do zero — o macOS vai pedir permissão de novo
@@ -169,73 +189,59 @@ o script precisa ser re-rodado.
 - *"me lembra a cada 30 minutos de alongar"* — lembrete periódico detached.
 - `/notify list` / `/notify stop` — gerencia lembretes ativos.
 - *"silencia por 1 hora"* / *"pode voltar a notificar"* — modo foco.
-- *"tem versão nova?"* — checa na hora e atualiza se você quiser.
+- `/notify doctor` — por que avisou (ou não) e para onde o clique vai.
+- `/notify migrate` — conclui a troca da 1.x pelo plugin.
 
-Direto no shell (fora do Claude):
+Direto no shell (fora do Claude), a partir de um clone do repo:
 
 ```bash
-~/.claude/skills/notify/notify.sh --done "build ok"
-~/.claude/skills/notify/notify.sh --fail "build quebrou"
-~/.claude/skills/notify/notify.sh "mensagem" "Título" "subtítulo" "Ping"
-~/.claude/skills/notify/repeat.sh 1800 "alongar!"     # a cada 30 min
-~/.claude/skills/notify/repeat.sh stop
-~/.claude/skills/notify/mute.sh 30m                   # silêncio por 30 min
-~/.claude/skills/notify/mute.sh off                   # religa
-~/.claude/skills/notify/mute.sh status                # como está agora
-~/.claude/skills/notify/doctor.sh                     # por que avisou (ou não), e para onde o clique vai
-~/.claude/skills/notify/doctor.sh --test              # posta um banner; clique e veja o que o clique fez
-~/.claude/skills/notify/check-update.sh --force       # tem versão nova?
-~/.claude/skills/notify/update.sh                     # atualiza agora
+skills/notify/notify.sh --done "build ok"
+skills/notify/notify.sh --fail "build quebrou"
+skills/notify/notify.sh "mensagem" "Título" "subtítulo" "Ping"
+skills/notify/repeat.sh 1800 "alongar!"     # a cada 30 min
+skills/notify/repeat.sh stop
+skills/notify/mute.sh 30m                   # silêncio por 30 min
+skills/notify/mute.sh off                   # religa
+skills/notify/mute.sh status                # como está agora
+skills/notify/doctor.sh                     # por que avisou (ou não), e para onde o clique vai
+skills/notify/doctor.sh --test              # posta um banner; clique e veja o que o clique fez
 ```
-
-### Atualização
-
-O hook `Stop` roda `check-update.sh` detached, no máximo uma vez por dia (a consulta é um
-`git ls-remote` nas tags — sem clone, sem autenticação, sem API). Quando o remoto tem uma tag
-maior que o `VERSION` instalado, chega um banner clicável.
-
-O clique **não instala nada**: abre uma janela com três saídas — **I̲nstalar**, **Ver no
-G̲itHub** (abre a página de releases no navegador e sai sem tocar em nada) e **Cancelar**,
-ligado ao `Esc`. Esse desvio é proposital: é software livre rodando um instalador na sua
-máquina, então ler o diff antes tem que ser um clique, não uma escavação. `update.sh --yes`
-pula a janela para quem quer automatizar.
-
-Ao instalar, ele clona **exatamente a tag anunciada** (`--branch`) num diretório temporário e
-roda o instalador de lá. Seu clone de trabalho nunca é tocado: puxar um branch entregaria
-commits ainda não lançados, e dar checkout numa tag dentro do repositório onde você trabalha
-te deixaria em detached HEAD. Depois de atualizar, **reinicie o Claude Code** para os hooks
-recarregarem.
 
 ## Como funciona
 
 ```
 claude-notifications/
-├── install.sh              # instala skill + hooks (+ app, se possível); idempotente, com backup
-├── uninstall.sh            # remove skill, app, ponte e SÓ os hooks da skill (preserva os alheios)
+├── .claude-plugin/
+│   ├── plugin.json         # o plugin "notify" (nome, versão)
+│   └── marketplace.json    # o repo é o próprio marketplace "claude-notifications"
+├── hooks/hooks.json        # SessionStart, Notification, Stop, PermissionRequest, UserPromptSubmit
+├── install.sh              # instala o plugin pelo CLI do Claude Code e migra a 1.x
+├── uninstall.sh            # remove plugin, app, ponte, estado e o que sobrou da 1.x
 ├── vscode-bridge/          # extensão ponte do VSCode: aba exata do Claude e terminal integrado
 ├── install-notifier-app.sh # cria o app "Claude Code" em ~/Applications (permissão + ícone isolado)
 ├── set-claude-icon.sh      # aplica o ícone do Claude no app dedicado (ou no terminal-notifier)
-├── hooks.json              # snippet dos hooks p/ merge manual no settings.json
-├── VERSION                 # versão instalada, comparada com as tags do remoto
+├── VERSION                 # igual ao "version" do plugin.json (um teste confere)
 ├── assets/
 │   ├── claude-logo.png     # ícone 1024×1024 (gerado do SVG ao lado)
 │   └── claude-logo.svg     # fonte vetorial do ícone
-├── skill/
+├── skills/notify/
 │   ├── SKILL.md            # instruções que o Claude Code carrega (/notify)
 │   ├── lang/               # catálogos de strings (en.sh, pt.sh)
-│   ├── notify-lib.sh       # constantes + helpers compartilhados (bundle, foreground, idioma)
+│   ├── notify-lib.sh       # constantes + helpers compartilhados (origem, gate, idioma, plugin)
 │   ├── notify.sh           # banner nativo (terminal-notifier ou osascript)
 │   ├── repeat.sh           # lembretes periódicos detached (start/list/stop)
 │   ├── mute.sh             # modo foco: silencia banners e o dialog de aprovação
-│   ├── notify.conf.example # config opcional (idioma, app do clique, timeouts, update)
+│   ├── notify.conf.example # config opcional (idioma, app do clique, sons, timeouts)
+│   ├── session-hook.sh     # hook SessionStart → prepara a versão, pede a migração da 1.x
+│   ├── setup.sh            # app de notificação + extensão ponte, uma vez por versão
+│   ├── migrate.sh          # /notify migrate: aposenta a instalação 1.x
 │   ├── notify-hook.sh      # hook Notification → roteia por notification_type
 │   ├── stop-hook.sh        # hook Stop → banner "pronto" (quieto se você olha a sessão)
 │   ├── prompt-hook.sh      # hook UserPromptSubmit → limpa avisos da sessão, mede o turno
-│   ├── doctor.sh           # diagnóstico: origem, gate, clique, notificador, herdr
+│   ├── doctor.sh           # diagnóstico: origem, gate, clique, notificador, plugin, herdr
 │   ├── approval-hook.sh    # hook PermissionRequest → dialog Aprovar/Negar
-│   ├── dialog.js           # painel flutuante que não rouba o teclado (aprovação, update)
-│   ├── check-update.sh     # há versão nova? (rate-limited, banner clicável)
-│   └── update.sh           # baixa e reinstala — é o que o clique do banner roda
+│   ├── focus.sh            # o clique: pane do herdr, aba do terminal, aba do Claude no VSCode
+│   └── dialog.js           # painel flutuante que não rouba o teclado
 └── tests/                  # suíte bats (roda no CI em macOS + shellcheck)
 ```
 
@@ -244,9 +250,10 @@ Notas de segurança do design:
 - `repeat.sh stop` só mata processos comprovadamente dele (verifica um marker no `ps` antes do
   `kill` — PID reciclado pós-reboot nunca é alvo) e rejeita intervalos inválidos ou menores
   que 5s (um `sleep` quebrado viraria um loop de spam de notificações).
-- O `install.sh` faz backup timestampado (`settings.json.bak.<data>`) antes de mexer nos seus
-  hooks e nunca sobrescreve hooks de outras ferramentas; o `uninstall.sh` remove **apenas** as
-  entradas de hook que apontam para a skill, preservando qualquer outra intacta.
+- O `/notify migrate` e o `uninstall.sh` fazem backup timestampado (`settings.json.bak.<data>`)
+  antes de mexer nos seus hooks e removem **apenas** as entradas que apontam para a cópia 1.x,
+  preservando qualquer outra intacta. A migração só roda com o plugin instalado: sem ele, você
+  ficaria sem notificação nenhuma.
 - O hook `Notification` roteia pelo campo `notification_type` do Claude Code (permissão,
   espera, agente concluído…), com fallback por palavra-chave para versões antigas. Um pedido de
   permissão dispara os dois eventos: quem o anuncia (banner + janela) deixa um marcador por
@@ -266,9 +273,11 @@ no Slack caía nele, e uma letra perdida apertava um botão; o `display dialog` 
 máximo 3 botões. Detalhes que só aparecem quando se tenta:
 
 - O painel é mostrado com `orderFrontRegardless` e **sem `runModal`**: uma sessão modal
-  torna o painel a janela-chave. Os eventos são bombeados à mão até um clique. O resultado
-  foi medido: o app da frente continua o mesmo, o osascript nunca fica ativo e o painel
-  nunca vira janela-chave.
+  torna o painel a janela-chave. Os eventos são bombeados à mão, e o painel só pega o teclado
+  quando você clica nele. A máscara do laço é `-1`, não `NSEventMaskAny`: esse vale
+  `NSUIntegerMax`, que o JXA arredonda para 2^63, e nenhum evento casa (na 1.9.0 o painel
+  ignorava todo clique). Os atalhos são lidos no próprio laço, antes de a caixa do comando
+  engolir a letra.
 - O timeout mora no **shell**, que mata o processo quando ele vence; o mesmo vigia fecha o
   painel quando você volta a olhar a sessão.
 - O watchdog do timeout roda com stdout redirecionado. Sem isso ele segura o pipe do
@@ -284,7 +293,9 @@ máximo 3 botões. Detalhes que só aparecem quando se tenta:
 
 ## Personalização
 
-Crie `~/.claude/skills/notify/notify.conf` (há um `notify.conf.example` instalado junto):
+Crie `~/Library/Application Support/claude-notifications/notify.conf` (fora do plugin, então
+as atualizações não o tocam; modelo em
+[`skills/notify/notify.conf.example`](skills/notify/notify.conf.example)):
 
 ```bash
 # Idioma da interface: "en" ou "pt". Sem isto, segue o locale do macOS.
@@ -325,12 +336,8 @@ NOTIFY_BANNER_DETAIL=tool
 # Uma linha por chamada de hook em .debug.log — os hooks falham em silêncio por design.
 NOTIFY_DEBUG=1
 
-# Checagem de versão nova (banner clicável). 0 desliga.
-NOTIFY_UPDATE_CHECK=0
-# Intervalo mínimo entre checagens, em segundos (padrão: 86400 = 1 dia).
-NOTIFY_UPDATE_INTERVAL=86400
-# Repositório consultado — troque para acompanhar um fork.
-NOTIFY_UPDATE_REPO="https://github.com/hallanneves/claude-notifications.git"
+# Não instalar a extensão ponte no VSCode/Cursor.
+NOTIFY_BRIDGE=0
 ```
 
 Outros ajustes:
@@ -345,31 +352,46 @@ Outros ajustes:
 
 ## Desinstalar
 
+```
+/plugin uninstall notify@claude-notifications
+```
+
+remove o plugin. Para levar junto o app dedicado, a extensão ponte, o estado e o que tiver
+sobrado de uma 1.x, rode num clone do repo:
+
 ```bash
 ./uninstall.sh
 ```
 
-Remove a skill, o app dedicado, a extensão ponte e as entradas de hook **da skill** no
-`~/.claude/settings.json`
-(hooks de outras ferramentas ficam intactos; um backup timestampado é criado antes). Se você
-tinha aplicado o ícone no terminal-notifier compartilhado do Homebrew:
+Hooks de outras ferramentas no `settings.json` ficam intactos (um backup timestampado é criado
+antes). Se você tinha aplicado o ícone no terminal-notifier compartilhado do Homebrew:
 `brew reinstall terminal-notifier` restaura o original.
 
 ## Desenvolvimento
 
 ```bash
 brew install shellcheck bats-core
-shellcheck -x -P SCRIPTDIR -S style install.sh uninstall.sh install-notifier-app.sh set-claude-icon.sh skill/*.sh skill/lang/*.sh
+shellcheck -x -P SCRIPTDIR -S style install.sh uninstall.sh install-notifier-app.sh set-claude-icon.sh vscode-bridge/build-vsix.sh skills/notify/*.sh skills/notify/lang/*.sh tests/helpers.bash
 bats tests
+claude plugin validate .
 ```
 
-A mesma dupla roda no CI (GitHub Actions): shellcheck no Ubuntu, bats num runner macOS. Os
-testes usam `HOME` descartável e stubs de `terminal-notifier`/`osascript`/`lsappinfo` — nenhum
-teste dispara notificação real nem toca no seu `settings.json`.
+O CI (GitHub Actions) roda shellcheck e `claude plugin validate` no Ubuntu e o bats num
+runner macOS. Os testes usam `HOME` descartável e stubs de `claude`, `terminal-notifier`,
+`osascript` e `lsappinfo`: nenhum teste dispara notificação real, instala plugin ou toca no seu
+`settings.json`.
+
+Para testar mudanças locais como plugin: `./install.sh --local` instala a partir do clone, que
+o Claude Code carrega no lugar (edições valem na próxima sessão ou com `/reload-plugins`). Ou,
+só numa sessão: `claude --plugin-dir .`.
+
+**Release**: suba juntos o `VERSION` e o `version` do `.claude-plugin/plugin.json` (um teste
+confere); é a mudança desse número que faz o Claude Code oferecer a atualização. Crie a tag
+`v<versão>` no mesmo commit.
 
 ### Adicionar um idioma
 
-Copie `skill/lang/en.sh` para `skill/lang/<código>.sh` (o código de duas letras, como `es`
+Copie `skills/notify/lang/en.sh` para `skills/notify/lang/<código>.sh` (o código de duas letras, como `es`
 ou `fr`), traduza os valores e pronto — nenhum script muda, e quem tiver o macOS nesse idioma
 passa a ser atendido automaticamente. Dois testes protegem o resto: os catálogos precisam ter
 exatamente as mesmas chaves, e todo `$L_*` usado nos scripts precisa existir em todos eles.

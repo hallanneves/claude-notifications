@@ -1,0 +1,11 @@
+{
+  "name": "notify",
+  "displayName": "claude-notifications",
+  "version": "2.0.0",
+  "description": "Native macOS notifications for Claude Code: a banner when a turn ends, a keyboard-safe approval panel, and a click that returns to the exact session (herdr pane, Terminal tab, the Claude tab in VSCode).",
+  "author": { "name": "Hallan Neves", "url": "https://github.com/hallanneves" },
+  "homepage": "https://github.com/hallanneves/claude-notifications",
+  "repository": "https://github.com/hallanneves/claude-notifications",
+  "license": "MIT",
+  "keywords": ["notifications", "macos", "hooks", "herdr", "vscode"]
+}

@@ -1,0 +1,13 @@
+{
+  "name": "claude-notifications",
+  "owner": { "name": "Hallan Neves", "url": "https://github.com/hallanneves" },
+  "description": "Native macOS notifications for Claude Code.",
+  "plugins": [
+    {
+      "name": "notify",
+      "source": ".",
+      "description": "Native macOS notifications for Claude Code: a banner when a turn ends, a keyboard-safe approval panel, and a click that returns to the exact session.",
+      "category": "productivity"
+    }
+  ]
+}

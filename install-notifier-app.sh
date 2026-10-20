@@ -13,8 +13,8 @@
 # `brew upgrade` no longer reverts anything.
 set -euo pipefail
 cd "$(dirname "$0")"
-# shellcheck source=skill/notify-lib.sh
-. ./skill/notify-lib.sh
+# shellcheck source=skills/notify/notify-lib.sh
+. ./skills/notify/notify-lib.sh
 load_notify_conf
 
 SRC="$(brew_bundle)" || {

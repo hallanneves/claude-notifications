@@ -10,6 +10,8 @@ DIR="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=notify-lib.sh
 . "$DIR/notify-lib.sh"
 load_notify_conf
+# A pre-2.0 install is still wired: it handles this event (see plugin_yields).
+plugin_yields && exit 0
 
 INPUT="$(cat)"
 SESSION="$(printf '%s' "$INPUT" | jq -r '.session_id // empty' 2>/dev/null)"

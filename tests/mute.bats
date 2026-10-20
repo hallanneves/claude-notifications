@@ -95,12 +95,3 @@ teardown() { common_teardown; }
   [ -z "$output" ]
   [ ! -f "$WORK/osascript.calls" ]
 }
-
-@test "mute: o banner de atualizacao tambem respeita o silencio" {
-  echo "1.0.0" > "$WORK/skill/VERSION"
-  remote="$(make_fake_remote v9.9.9)"
-  "$WORK/skill/mute.sh" 30m >/dev/null
-  NOTIFY_TN="$STUB/tn" NOTIFY_UPDATE_REPO="$remote" run "$WORK/skill/check-update.sh" --force
-  [ "$status" -eq 0 ]
-  [ ! -f "$WORK/tn.args" ]
-}
